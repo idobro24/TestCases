@@ -1,5 +1,6 @@
 package com.example.testcases.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,6 +52,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.example.testcases.data.Priority
@@ -62,9 +66,12 @@ import com.example.testcases.ui.theme.color
 fun EditorScreen(
     vm: TestCaseViewModel,
     id: Long,
+    initialSectionId: Long?,
     onClose: () -> Unit
 ) {
     val isNew = id == 0L
+    val context = LocalContext.current
+    val sections by vm.sections.collectAsStateWithLifecycle()
 
     var loaded by rememberSaveable { mutableStateOf(isNew) }
     var original by remember { mutableStateOf<TestCase?>(null) }
@@ -76,6 +83,7 @@ fun EditorScreen(
     var expected by rememberSaveable { mutableStateOf("") }
     var priority by rememberSaveable { mutableStateOf(Priority.MEDIUM) }
     var status by rememberSaveable { mutableStateOf(Status.NOT_RUN) }
+    var sectionId by rememberSaveable { mutableStateOf(initialSectionId) }
     var showErrors by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -95,30 +103,43 @@ fun EditorScreen(
             expected = tc.expectedResult
             priority = tc.priority
             status = tc.status
+            sectionId = tc.sectionId
             loaded = true
         }
     }
 
-    fun save() {
+    fun buildCase(): TestCase? {
         if (title.isBlank()) {
             showErrors = true
-            return
+            return null
         }
-        if (!isNew && original == null) return
+        if (!isNew && original == null) return null
         val base = original ?: TestCase(title = "")
-        vm.save(
-            base.copy(
-                title = title.trim(),
-                description = description.trim(),
-                preconditions = preconditions.trim(),
-                steps = steps.map { it.trim() }.filter { it.isNotEmpty() }
-                    .joinToString(TestCase.STEP_SEP),
-                expectedResult = expected.trim(),
-                priority = priority,
-                status = status
-            ),
-            onDone = onClose
+        return base.copy(
+            title = title.trim(),
+            description = description.trim(),
+            preconditions = preconditions.trim(),
+            steps = steps.map { it.trim() }.filter { it.isNotEmpty() }
+                .joinToString(TestCase.STEP_SEP),
+            expectedResult = expected.trim(),
+            priority = priority,
+            status = status,
+            sectionId = sectionId
         )
+    }
+
+    fun save() {
+        val tc = buildCase() ?: return
+        vm.save(tc, onDone = onClose)
+    }
+
+    /** Копия того, что сейчас в форме (даже если ещё не сохранено). */
+    fun copyCase() {
+        val tc = buildCase() ?: return
+        vm.duplicate(tc) { copy ->
+            Toast.makeText(context, "Создана копия ${copy.code}", Toast.LENGTH_SHORT).show()
+            onClose()
+        }
     }
 
     Scaffold(
@@ -134,6 +155,9 @@ fun EditorScreen(
                 },
                 actions = {
                     if (!isNew) {
+                        IconButton(onClick = ::copyCase) {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = "Копировать кейс")
+                        }
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Rounded.Delete, contentDescription = "Удалить кейс")
                         }
@@ -177,7 +201,24 @@ fun EditorScreen(
                 supporting = if (showErrors && title.isBlank()) "Введите название кейса" else null
             )
 
-            Section("Приоритет") {
+            FormSection("Раздел") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = sectionId == null,
+                        onClick = { sectionId = null },
+                        label = { Text("Без раздела") }
+                    )
+                    sections.forEach { s ->
+                        FilterChip(
+                            selected = sectionId == s.id,
+                            onClick = { sectionId = s.id },
+                            label = { Text(s.name) }
+                        )
+                    }
+                }
+            }
+
+            FormSection("Приоритет") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Priority.entries.forEach { p ->
                         FilterChip(
@@ -189,7 +230,7 @@ fun EditorScreen(
                 }
             }
 
-            Section("Статус") {
+            FormSection("Статус") {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -221,7 +262,7 @@ fun EditorScreen(
             AppField(description, { description = it }, "Описание", minLines = 2)
             AppField(preconditions, { preconditions = it }, "Предусловия", minLines = 2)
 
-            Section("Шаги") {
+            FormSection("Шаги") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     steps.forEachIndexed { index, text ->
                         Row(verticalAlignment = Alignment.Top) {
@@ -298,7 +339,7 @@ fun EditorScreen(
 }
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun FormSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title,
