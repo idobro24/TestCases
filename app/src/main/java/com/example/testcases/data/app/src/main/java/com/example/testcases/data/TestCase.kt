@@ -18,6 +18,13 @@ enum class Priority(val label: String) {
     CRITICAL("Критичный")
 }
 
+@Entity(tableName = "sections")
+data class Section(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "test_cases")
 data class TestCase(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -29,6 +36,8 @@ data class TestCase(
     val expectedResult: String = "",
     val priority: Priority = Priority.MEDIUM,
     val status: Status = Status.NOT_RUN,
+    /** null — кейс без раздела. */
+    val sectionId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
