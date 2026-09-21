@@ -6,6 +6,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -64,19 +66,34 @@ private val AppTypography = Typography(
     labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
 )
 
+/** Выбор темы пользователем. */
+enum class ThemeMode(val label: String) {
+    SYSTEM("Как в системе"),
+    LIGHT("Светлая"),
+    DARK("Тёмная")
+}
+
+/** Включена ли сейчас тёмная тема (с учётом ручного выбора). */
+val LocalDarkTheme = compositionLocalOf { false }
+
 @Composable
-fun TestCasesTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        typography = AppTypography,
-        content = content
-    )
+fun TestCasesTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = AppTypography,
+            content = content
+        )
+    }
 }
 
 /** Цвет статуса — главный смысловой акцент всего приложения. */
 @Composable
 fun Status.color(): Color {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDarkTheme.current
     return when (this) {
         Status.PASSED -> if (dark) Color(0xFF4CD08C) else Color(0xFF12804B)
         Status.FAILED -> if (dark) Color(0xFFFF7A88) else Color(0xFFC42B3E)
