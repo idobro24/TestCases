@@ -23,9 +23,9 @@ data class ImportResult(
 )
 
 /**
- * Разбор CSV-файла с тест-кейсами.
- * Понимает разделители «;», «,» и табуляцию, кодировки UTF-8 и Windows-1251,
- * многострочные ячейки в кавычках, русские и английские названия столбцов.
+ * Разбор файла с тест-кейсами: Excel (.xlsx) или CSV.
+ * CSV: разделители «;», «,» и табуляция, кодировки UTF-8 и Windows-1251,
+ * многострочные ячейки в кавычках. Названия столбцов — русские или английские.
  */
 object CsvImport {
 
@@ -45,22 +45,53 @@ object CsvImport {
     fun parse(bytes: ByteArray): ImportResult {
         if (bytes.isEmpty()) return fail("Файл пустой.")
         if (bytes.size > MAX_BYTES) return fail("Файл слишком большой (больше 5 МБ).")
-        if (bytes.size >= 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
+        if (isOldExcel(bytes)) {
             return fail(
-                "Похоже, это файл Excel или Word, а не CSV. " +
-                    "В Excel: Файл → Сохранить как → CSV UTF-8. " +
-                    "В Google Таблицах: Файл → Скачать → CSV."
+                "Это старый формат Excel (.xls) или файл с паролем. Откройте файл в Excel, " +
+                    "сохраните как «Книга Excel (.xlsx)» без пароля и загрузите снова."
             )
         }
 
-        val text = decode(bytes).replace("\r\n", "\n").replace('\r', '\n')
-        val rows = tokenize(text, detectDelimiter(text))
+        val rows: List<List<String>> = if (isZip(bytes)) {
+            try {
+                XlsxReader.read(bytes)
+            } catch (e: XlsxReader.NotXlsx) {
+                return fail(e.message.orEmpty())
+            } catch (e: Exception) {
+                return fail("Не удалось прочитать файл Excel: ${e.message}")
+            }
+        } else {
+            val text = decode(bytes).replace("\r\n", "\n").replace('\r', '\n')
+            tokenize(text, detectDelimiter(text))
+        }
+        return parseRows(rows)
+    }
+
+    private fun isZip(bytes: ByteArray): Boolean =
+        bytes.size >= 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
+
+    private fun isOldExcel(bytes: ByteArray): Boolean =
+        bytes.size >= 4 &&
+            (bytes[0].toInt() and 0xFF) == 0xD0 &&
+            (bytes[1].toInt() and 0xFF) == 0xCF &&
+            (bytes[2].toInt() and 0xFF) == 0x11 &&
+            (bytes[3].toInt() and 0xFF) == 0xE0
+
+    private fun parseRows(rows: List<List<String>>): ImportResult {
         if (rows.isEmpty()) return fail("В файле нет данных.")
 
-        // --- заголовок
+        // Заголовок — первая строка, где есть столбец «Название» (сверху могут быть пустые строки)
+        val headerIdx = rows.indexOfFirst { row -> row.any { normalize(it) in Field.TITLE.aliases } }
+        if (headerIdx < 0) {
+            return fail(
+                "Не найден столбец «Название». Одна из первых строк должна содержать " +
+                    "заголовки столбцов, например: Раздел; Название; Шаги; Ожидаемый результат."
+            )
+        }
+
         val columns = HashMap<Field, Int>()
         val unknown = ArrayList<String>()
-        rows.first().forEachIndexed { index, raw ->
+        rows[headerIdx].forEachIndexed { index, raw ->
             val key = normalize(raw)
             if (key.isEmpty()) return@forEachIndexed
             val field = Field.entries.firstOrNull { key in it.aliases }
@@ -70,21 +101,14 @@ object CsvImport {
                 columns[field] = index
             }
         }
-        if (Field.TITLE !in columns) {
-            return fail(
-                "Не найден столбец «Название». Первая строка файла должна содержать " +
-                    "заголовки столбцов, например: Раздел; Название; Шаги; Ожидаемый результат."
-            )
-        }
 
-        // --- строки
         val cases = ArrayList<ParsedCase>()
         val warnings = ArrayList<String>()
         if (unknown.isNotEmpty()) {
             warnings.add("Эти столбцы не распознаны и пропущены: ${unknown.joinToString(", ")}.")
         }
 
-        for (i in 1 until rows.size) {
+        for (i in headerIdx + 1 until rows.size) {
             val row = rows[i]
             if (row.all { it.isBlank() }) continue
             val rowNo = i + 1
@@ -140,7 +164,7 @@ object CsvImport {
 
     private fun fail(message: String) = ImportResult(emptyList(), emptyList(), message)
 
-    // ------------------------------------------------------------ чтение текста
+    // ------------------------------------------------------------ чтение текста (CSV)
 
     private fun decode(bytes: ByteArray): String {
         if (bytes.size >= 2) {
