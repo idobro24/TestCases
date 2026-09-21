@@ -140,7 +140,7 @@ private fun Instructions(onPick: () -> Unit) {
             ) {
                 Text("Формат файла", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "CSV в кодировке UTF-8. Первая строка — названия столбцов:",
+                    "Файл Excel (.xlsx) или CSV. Берётся первый лист. В первой строке — названия столбцов:",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -153,7 +153,7 @@ private fun Instructions(onPick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    "Шаги: каждый шаг с новой строки внутри ячейки (или через знак |).",
+                    "Шаги: каждый шаг с новой строки внутри ячейки (в Excel — Alt+Enter) или через знак |.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -162,8 +162,8 @@ private fun Instructions(onPick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    "Из Excel: Файл → Сохранить как → CSV UTF-8. " +
-                        "Из Google Таблиц: Файл → Скачать → CSV.",
+                    "Старый формат .xls не читается: сохраните как «Книга Excel (.xlsx)». " +
+                        "Из Google Таблиц: Файл → Скачать → Microsoft Excel (.xlsx).",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
