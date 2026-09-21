@@ -4,87 +4,74 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.testcases.data.CsvExport
 import com.example.testcases.data.Priority
 import com.example.testcases.data.Status
 import com.example.testcases.data.TestCase
 import com.example.testcases.ui.theme.color
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ListScreen(
+fun CaseListScreen(
     vm: TestCaseViewModel,
+    sectionId: Long,
+    onBack: () -> Unit,
     onOpen: (Long) -> Unit,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
+    onRun: () -> Unit
 ) {
     val all by vm.all.collectAsStateWithLifecycle()
-    val visible by vm.visible.collectAsStateWithLifecycle()
-    val query by vm.query.collectAsStateWithLifecycle()
-    val filter by vm.filter.collectAsStateWithLifecycle()
+    val sections by vm.sections.collectAsStateWithLifecycle()
+
+    var query by rememberSaveable { mutableStateOf("") }
+    var statusFilter by rememberSaveable { mutableStateOf<Status?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var showRename by rememberSaveable { mutableStateOf(false) }
+    var showDelete by rememberSaveable { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val section = sections.firstOrNull { it.id == sectionId }
+    val title = when (sectionId) {
+        SECTION_ALL -> "Все кейсы"
+        SECTION_NONE -> "Без раздела"
+        else -> section?.name.orEmpty()
+    }
+    val sectionNames = remember(sections) { sections.associate { it.id to it.name } }
+    val scoped = remember(all, sectionId) { all.orEmpty().inSection(sectionId) }
+    val visible = remember(scoped, query, statusFilter) {
+        scoped.filter { tc ->
+            (statusFilter == null || tc.status == statusFilter) &&
+                (query.isBlank() ||
+                    tc.title.contains(query, ignoreCase = true) ||
+                    tc.code.contains(query, ignoreCase = true) ||
+                    tc.description.contains(query, ignoreCase = true))
+        }
+    }
 
     fun deleteWithUndo(tc: TestCase) {
         vm.delete(tc)
@@ -99,9 +86,76 @@ fun ListScreen(
         }
     }
 
+    val context = LocalContext.current
+
+    /** Экспорт всех кейсов текущего раздела (без учёта поиска и фильтра). */
+    fun exportCases() {
+        val fileName = when (sectionId) {
+            SECTION_ALL -> "test-cases.csv"
+            SECTION_NONE -> "test-cases-no-section.csv"
+            else -> title.replace(Regex("[^\\p{L}\\p{N}]+"), "_").trim('_').ifEmpty { "section" } + ".csv"
+        }
+        CsvExport.share(context, fileName, CsvExport.build(scoped, sectionNames))
+    }
+
+    fun copyCase(tc: TestCase) {
+        vm.duplicate(tc) { copy ->
+            scope.launch {
+                snackbar.currentSnackbarData?.dismiss()
+                val result = snackbar.showSnackbar(
+                    message = "Создана копия ${copy.code}",
+                    actionLabel = "Открыть",
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) onOpen(copy.id)
+            }
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopAppBar(
+                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = ::exportCases, enabled = scoped.isNotEmpty()) {
+                        Icon(Icons.Rounded.Share, contentDescription = "Поделиться кейсами")
+                    }
+                    if (section != null) {
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с разделом")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Переименовать") },
+                                    onClick = {
+                                        menuOpen = false
+                                        showRename = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Удалить раздел") },
+                                    onClick = {
+                                        menuOpen = false
+                                        showDelete = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onCreate,
@@ -112,8 +166,7 @@ fun ListScreen(
             )
         }
     ) { padding ->
-        val list = all
-        if (list == null) {
+        if (all == null) {
             Box(Modifier.fillMaxSize())
             return@Scaffold
         }
@@ -123,28 +176,33 @@ fun ListScreen(
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
-                top = padding.calculateTopPadding() + 16.dp,
+                top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 96.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item(key = "header") { Header(list) }
-
-            if (list.isNotEmpty()) {
-                item(key = "filters") { FilterRow(list, filter, vm::setFilter) }
-                item(key = "search") { SearchField(query, vm::setQuery) }
+            if (scoped.isNotEmpty()) {
+                item(key = "progress") { Progress(scoped, onRun) }
+                item(key = "filters") { FilterRow(scoped, statusFilter) { statusFilter = it } }
+                item(key = "search") { SearchField(query) { query = it } }
             }
 
             when {
-                list.isEmpty() -> item(key = "empty") { EmptyState(onCreate) }
+                scoped.isEmpty() -> item(key = "empty") { EmptyState(onCreate) }
                 visible.isEmpty() -> item(key = "nothing") { NoResults() }
                 else -> items(visible, key = { it.id }) { tc ->
-                    SwipeToDeleteBox(
+                    SwipeActionBox(
                         modifier = Modifier.animateItem(),
-                        onDelete = { deleteWithUndo(tc) }
+                        onDelete = { deleteWithUndo(tc) },
+                        onCopy = { copyCase(tc) }
                     ) {
                         TestCaseCard(
                             tc = tc,
+                            sectionName = if (sectionId == SECTION_ALL) {
+                                tc.sectionId?.let { sectionNames[it] }
+                            } else {
+                                null
+                            },
                             onClick = { onOpen(tc.id) },
                             onStatusChange = { vm.setStatus(tc, it) }
                         )
@@ -153,34 +211,103 @@ fun ListScreen(
             }
         }
     }
+
+    if (showRename && section != null) {
+        SectionNameDialog(
+            title = "Переименовать раздел",
+            initial = section.name,
+            confirmLabel = "Сохранить",
+            onConfirm = {
+                vm.renameSection(section, it)
+                showRename = false
+            },
+            onDismiss = { showRename = false }
+        )
+    }
+
+    if (showDelete && section != null) {
+        val count = scoped.size
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Удалить раздел «${section.name}»?") },
+            text = {
+                Text(
+                    if (count == 0) {
+                        "В разделе нет кейсов."
+                    } else {
+                        "В нём $count ${plural(count, "кейс", "кейса", "кейсов")}. " +
+                            "Их можно оставить без раздела или удалить вместе с ним."
+                    }
+                )
+            },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (count > 0) {
+                        TextButton(onClick = {
+                            showDelete = false
+                            vm.deleteSection(section, withCases = true)
+                            onBack()
+                        }) {
+                            Text("Удалить вместе с кейсами", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = {
+                            showDelete = false
+                            vm.deleteSection(section, withCases = false)
+                            onBack()
+                        }) {
+                            Text("Удалить раздел, кейсы оставить")
+                        }
+                    } else {
+                        TextButton(onClick = {
+                            showDelete = false
+                            vm.deleteSection(section, withCases = false)
+                            onBack()
+                        }) {
+                            Text("Удалить", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(onClick = { showDelete = false }) { Text("Отмена") }
+                }
+            }
+        )
+    }
 }
 
-// ---------------------------------------------------------------- header
+// ---------------------------------------------------------------- progress
 
 @Composable
-private fun Header(cases: List<TestCase>) {
+private fun Progress(cases: List<TestCase>, onRun: () -> Unit) {
     val passed = cases.count { it.status == Status.PASSED }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Тест-кейсы", style = MaterialTheme.typography.headlineMedium)
-        if (cases.isNotEmpty()) {
+    val unrun = cases.count { it.status == Status.NOT_RUN }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Пройдено $passed из ${cases.size}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        StatusBar(cases)
+        FilledTonalButton(
+            onClick = onRun,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                "Пройдено $passed из ${cases.size}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                if (unrun in 1 until cases.size) "Продолжить прогон (осталось $unrun)" else "Начать прогон"
             )
-            StatusBar(cases)
         }
     }
 }
 
 /** Полоса с долями статусов: сразу видно, как идёт тестирование. */
 @Composable
-private fun StatusBar(cases: List<TestCase>) {
+internal fun StatusBar(cases: List<TestCase>, height: androidx.compose.ui.unit.Dp = 10.dp) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(10.dp)
-            .clip(RoundedCornerShape(5.dp))
+            .height(height)
+            .clip(RoundedCornerShape(height / 2))
             .background(MaterialTheme.colorScheme.outlineVariant),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -257,7 +384,7 @@ private fun EmptyState(onCreate: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Тест-кейсов пока нет", style = MaterialTheme.typography.titleMedium)
+        Text("Здесь пока нет тест-кейсов", style = MaterialTheme.typography.titleMedium)
         Text(
             "Опишите шаги и ожидаемый результат — так проверку можно повторить в любой момент.",
             style = MaterialTheme.typography.bodyMedium,
@@ -265,7 +392,7 @@ private fun EmptyState(onCreate: () -> Unit) {
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = onCreate) { Text("Создать первый кейс") }
+        Button(onClick = onCreate) { Text("Создать кейс") }
     }
 }
 
@@ -290,6 +417,7 @@ private fun NoResults() {
 @Composable
 private fun TestCaseCard(
     tc: TestCase,
+    sectionName: String?,
     onClick: () -> Unit,
     onStatusChange: (Status) -> Unit
 ) {
@@ -318,6 +446,17 @@ private fun TestCaseCard(
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (sectionName != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            sectionName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
                     Spacer(Modifier.weight(1f))
                     PriorityTag(tc.priority)
                 }
@@ -358,7 +497,7 @@ private fun TestCaseCard(
 
 /** Приоритет как «уровень сигнала»: 1–4 столбика. */
 @Composable
-private fun PriorityTag(priority: Priority) {
+internal fun PriorityTag(priority: Priority) {
     val on = MaterialTheme.colorScheme.onSurfaceVariant
     val off = MaterialTheme.colorScheme.outlineVariant
     Row(
@@ -426,31 +565,38 @@ private fun StatusPill(status: Status, onSelect: (Status) -> Unit) {
 
 // ---------------------------------------------------------------- swipe
 
+/** Свайп влево — удалить, вправо — сделать копию. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeToDeleteBox(
+private fun SwipeActionBox(
     modifier: Modifier = Modifier,
     onDelete: () -> Unit,
+    onCopy: () -> Unit,
     content: @Composable () -> Unit
 ) {
     val currentOnDelete by rememberUpdatedState(onDelete)
+    val currentOnCopy by rememberUpdatedState(onCopy)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                currentOnDelete()
-                true
-            } else {
-                false
+            when (value) {
+                SwipeToDismissBoxValue.EndToStart -> {
+                    currentOnDelete()
+                    true
+                }
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    currentOnCopy()
+                    false // карточка возвращается на место
+                }
+                else -> false
             }
         }
     )
     SwipeToDismissBox(
         state = state,
         modifier = modifier,
-        enableDismissFromStartToEnd = false,
         backgroundContent = {
-            if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                Box(
+            when (state.dismissDirection) {
+                SwipeToDismissBoxValue.EndToStart -> Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(16.dp))
@@ -464,6 +610,21 @@ private fun SwipeToDeleteBox(
                         modifier = Modifier.padding(end = 24.dp)
                     )
                 }
+                SwipeToDismissBoxValue.StartToEnd -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Icon(
+                        Icons.Rounded.ContentCopy,
+                        contentDescription = "Копировать",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(start = 24.dp)
+                    )
+                }
+                else -> {}
             }
         }
     ) {
