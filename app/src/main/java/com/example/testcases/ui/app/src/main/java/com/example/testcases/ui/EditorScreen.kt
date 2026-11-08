@@ -1,6 +1,7 @@
 package com.example.testcases.ui
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +70,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.example.testcases.data.CaseText
 import com.example.testcases.data.Priority
 import com.example.testcases.data.Status
 import com.example.testcases.data.TestCase
@@ -100,6 +103,7 @@ fun EditorScreen(
     var sectionId by rememberSaveable { mutableStateOf(initialSectionId) }
     var showErrors by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showDiscard by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(id) {
         if (isNew) return@LaunchedEffect
@@ -157,6 +161,36 @@ fun EditorScreen(
         }
     }
 
+    // Что сейчас в форме и с чем это сравнивать, чтобы понять, есть ли несохранённые правки
+    val current = FormSnapshot(
+        title = title.trim(),
+        description = description.trim(),
+        preconditions = preconditions.trim(),
+        steps = steps.map { it.text.trim() }.filter { it.isNotEmpty() },
+        expected = expected.trim(),
+        priority = priority,
+        status = status,
+        sectionId = sectionId
+    )
+    val baseline: FormSnapshot? = if (isNew) {
+        FormSnapshot("", "", "", emptyList(), "", Priority.MEDIUM, Status.NOT_RUN, initialSectionId)
+    } else {
+        original?.toSnapshot()
+    }
+    val dirty = loaded && baseline != null && current != baseline
+
+    fun requestClose() {
+        if (dirty) showDiscard = true else onClose()
+    }
+
+    BackHandler(enabled = dirty) { showDiscard = true }
+
+    /** Отправляет кейс текстом — таким, каким он сейчас в форме. */
+    fun shareCase() {
+        val tc = buildCase() ?: return
+        CaseText.share(context, tc, sections.firstOrNull { it.id == tc.sectionId }?.name)
+    }
+
     Scaffold(
         modifier = Modifier.imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -164,12 +198,15 @@ fun EditorScreen(
             TopAppBar(
                 title = { Text(if (isNew) "Новый тест-кейс" else original?.code.orEmpty()) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
+                    IconButton(onClick = ::requestClose) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
                     if (!isNew) {
+                        IconButton(onClick = ::shareCase) {
+                            Icon(Icons.Rounded.Share, contentDescription = "Поделиться кейсом текстом")
+                        }
                         IconButton(onClick = ::copyCase) {
                             Icon(Icons.Rounded.ContentCopy, contentDescription = "Копировать кейс")
                         }
@@ -285,6 +322,29 @@ fun EditorScreen(
 
             Spacer(Modifier.height(8.dp))
         }
+    }
+
+    if (showDiscard) {
+        AlertDialog(
+            onDismissRequest = { showDiscard = false },
+            title = { Text("Сохранить изменения?") },
+            text = { Text("В кейсе есть несохранённые правки. Если выйти сейчас, они пропадут.") },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = {
+                        showDiscard = false
+                        save()
+                    }) { Text("Сохранить") }
+                    TextButton(onClick = {
+                        showDiscard = false
+                        onClose()
+                    }) {
+                        Text("Выйти без сохранения", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { showDiscard = false }) { Text("Продолжить редактирование") }
+                }
+            }
+        )
     }
 
     if (confirmDelete) {
@@ -528,3 +588,28 @@ private fun StepsEditor(
         }
     }
 }
+
+// ---------------------------------------------------------------- несохранённые изменения
+
+/** Слепок формы (с обрезанными пробелами) — по нему видно, менял ли человек что-то. */
+private data class FormSnapshot(
+    val title: String,
+    val description: String,
+    val preconditions: String,
+    val steps: List<String>,
+    val expected: String,
+    val priority: Priority,
+    val status: Status,
+    val sectionId: Long?
+)
+
+private fun TestCase.toSnapshot() = FormSnapshot(
+    title = title.trim(),
+    description = description.trim(),
+    preconditions = preconditions.trim(),
+    steps = stepList.map { it.trim() }.filter { it.isNotEmpty() },
+    expected = expectedResult.trim(),
+    priority = priority,
+    status = status,
+    sectionId = sectionId
+)
