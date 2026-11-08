@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- тень листа -->
+    <group android:translateY="2">
+        <path
+            android:fillColor="#40101A5C"
+            android:pathData="M38,28 H70 A6,6 0 0 1 76,34 V74 A6,6 0 0 1 70,80 H38 A6,6 0 0 1 32,74 V34 A6,6 0 0 1 38,28 Z" />
+    </group>
+
+    <!-- лист -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,28 H70 A6,6 0 0 1 76,34 V74 A6,6 0 0 1 70,80 H38 A6,6 0 0 1 32,74 V34 A6,6 0 0 1 38,28 Z" />
+
+    <!-- зажим планшета -->
+    <path
+        android:fillColor="#1B2570"
+        android:pathData="M48,24 H60 A3,3 0 0 1 63,27 V30 A3,3 0 0 1 60,33 H48 A3,3 0 0 1 45,30 V27 A3,3 0 0 1 48,24 Z" />
+
+    <!-- галочка -->
+    <path
+        android:pathData="M41,47 L50,56 L67,38"
+        android:strokeColor="#3648C9"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- полоса статусов, как в приложении: пройден / провален / заблокирован -->
+    <group>
+        <clip-path android:pathData="M41,67 H67 A3,3 0 0 1 70,70 A3,3 0 0 1 67,73 H41 A3,3 0 0 1 38,70 A3,3 0 0 1 41,67 Z" />
+        <path
+            android:fillColor="#D5D9EA"
+            android:pathData="M38,67 H70 V73 H38 Z" />
+        <path
+            android:fillColor="#12A150"
+            android:pathData="M38,67 H52 V73 H38 Z" />
+        <path
+            android:fillColor="#E5484D"
+            android:pathData="M53.5,67 H59 V73 H53.5 Z" />
+        <path
+            android:fillColor="#F0A020"
+            android:pathData="M60.5,67 H65 V73 H60.5 Z" />
+    </group>
+</vector>
