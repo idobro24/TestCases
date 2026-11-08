@@ -49,6 +49,7 @@ fun CaseListScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var statusFilter by rememberSaveable { mutableStateOf<Status?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var shareMenuOpen by remember { mutableStateOf(false) }
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
 
@@ -89,13 +90,17 @@ fun CaseListScreen(
     val context = LocalContext.current
 
     /** Экспорт всех кейсов текущего раздела (без учёта поиска и фильтра). */
-    fun exportCases() {
-        val fileName = when (sectionId) {
-            SECTION_ALL -> "test-cases.csv"
-            SECTION_NONE -> "test-cases-no-section.csv"
-            else -> title.replace(Regex("[^\\p{L}\\p{N}]+"), "_").trim('_').ifEmpty { "section" } + ".csv"
+    fun exportCases(asExcel: Boolean) {
+        val baseName = when (sectionId) {
+            SECTION_ALL -> "test-cases"
+            SECTION_NONE -> "test-cases-no-section"
+            else -> title.replace(Regex("[^\\p{L}\\p{N}]+"), "_").trim('_').ifEmpty { "section" }
         }
-        CsvExport.share(context, fileName, CsvExport.build(scoped, sectionNames))
+        if (asExcel) {
+            CsvExport.shareXlsx(context, "$baseName.xlsx", scoped, sectionNames)
+        } else {
+            CsvExport.share(context, "$baseName.csv", CsvExport.build(scoped, sectionNames))
+        }
     }
 
     fun copyCase(tc: TestCase) {
@@ -124,8 +129,32 @@ fun CaseListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = ::exportCases, enabled = scoped.isNotEmpty()) {
-                        Icon(Icons.Rounded.Share, contentDescription = "Поделиться кейсами")
+                    Box {
+                        IconButton(
+                            onClick = { shareMenuOpen = true },
+                            enabled = scoped.isNotEmpty()
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = "Поделиться кейсами")
+                        }
+                        DropdownMenu(
+                            expanded = shareMenuOpen,
+                            onDismissRequest = { shareMenuOpen = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Excel (.xlsx)") },
+                                onClick = {
+                                    shareMenuOpen = false
+                                    exportCases(asExcel = true)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("CSV") },
+                                onClick = {
+                                    shareMenuOpen = false
+                                    exportCases(asExcel = false)
+                                }
+                            )
+                        }
                     }
                     if (section != null) {
                         Box {
