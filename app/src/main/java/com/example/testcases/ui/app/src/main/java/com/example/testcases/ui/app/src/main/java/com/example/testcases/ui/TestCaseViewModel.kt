@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.example.testcases.data.AppDatabase
+import com.example.testcases.data.BugFiles
 import com.example.testcases.data.CsvImport
 import com.example.testcases.data.ImportResult
 import com.example.testcases.data.ParsedCase
@@ -41,6 +42,18 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.get(app)
     private val dao = db.dao()
     private val sectionDao = db.sections()
+
+    init {
+        // При запуске убираем скриншоты, на которые больше не ссылается ни один кейс
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val used = dao.allBugScreens().flatMap { it.split(TestCase.STEP_SEP) }.toSet()
+                BugFiles.cleanup(getApplication<Application>(), used)
+            } catch (e: Exception) {
+                // уборка не критична
+            }
+        }
+    }
 
     /** null — данные ещё загружаются. */
     val all: StateFlow<List<TestCase>?> = dao.observeAll()
