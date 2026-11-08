@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Тест-кейсы</title>
+<style>
+:root{--bg:#F3F5FA;--sf:#fff;--tx:#161A26;--mu:#585E72;--ol:#DADEE9;--pr:#3648C9;--pc:#E1E5FF;--on:#fff;--so:#fff;--nr:#656B7E;--ok:#12804B;--bad:#C42B3E;--blk:#B9740A;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F1220;--sf:#181C2C;--tx:#E4E6F0;--mu:#A9AEC2;--ol:#2E3448;--pr:#B7C0FF;--pc:#2A3596;--on:#0F1A6B;--so:#10131F;--nr:#9AA0B4;--ok:#4CD08C;--bad:#FF7A88;--blk:#F2B84B}}
+:root[data-theme="dark"]{--bg:#0F1220;--sf:#181C2C;--tx:#E4E6F0;--mu:#A9AEC2;--ol:#2E3448;--pr:#B7C0FF;--pc:#2A3596;--on:#0F1A6B;--so:#10131F;--nr:#9AA0B4;--ok:#4CD08C;--bad:#FF7A88;--blk:#F2B84B}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+h1{font-size:28px;margin:0;letter-spacing:-.5px}h2{font-size:18px;margin:0}h3{margin:0;font-size:20px}
+.w{max-width:1000px;margin:0 auto;padding:16px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.sp{flex:1}
+.mu{color:var(--mu)}.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}.c{text-align:center;padding:32px 0}
+.g{display:grid;grid-template-columns:230px 1fr;gap:16px;margin-top:16px}main{display:flex;flex-direction:column;gap:12px;min-width:0}
+.nav{display:flex;flex-direction:column;gap:6px;align-self:start}
+@media(max-width:760px){.g{grid-template-columns:1fr}.nav{flex-direction:row;overflow-x:auto;padding-bottom:4px}.nav>*{flex:none}}
+.b,.nv,.ch{font:inherit;cursor:pointer;border:1px solid var(--ol);background:var(--sf);color:var(--tx);border-radius:12px;padding:8px 14px}
+.b.p{background:var(--pr);color:var(--on);border-color:var(--pr);font-weight:600}.b.t{background:var(--pc);border-color:transparent;color:var(--tx)}
+.b.sm{padding:6px 10px}.b:disabled{opacity:.4;cursor:default}
+.nv{text-align:left;display:flex;justify-content:space-between;gap:10px}.nv.on,.ch.on{background:var(--pc);border-color:var(--pr)}.ch{border-radius:99px;padding:6px 12px;white-space:nowrap}
+.fl{display:flex;gap:8px;overflow-x:auto}
+.bar{display:flex;gap:2px;height:10px;border-radius:5px;overflow:hidden;background:var(--ol)}.bar i{display:block}
+.card{background:var(--sf);border:1px solid var(--ol);border-radius:16px}
+.cs{padding:12px 14px 12px 18px;cursor:pointer;border-left:6px solid var(--c);display:flex;flex-direction:column;gap:6px}
+.cs h4{margin:0;font-size:16px}.pb{display:inline-flex;align-items:flex-end;gap:2px;margin-right:6px}.pb u{width:3px;background:var(--ol);border-radius:1px}.pb u.on{background:var(--mu)}
+.pill{font:inherit;font-size:12px;font-weight:600;border:0;border-radius:99px;padding:5px 8px;cursor:pointer}.bug{color:var(--bad);font-size:12px}
+input,select,textarea{font:inherit;color:var(--tx);background:var(--sf);border:1px solid var(--ol);border-radius:10px;padding:9px 11px;width:100%}input.err{border-color:var(--bad)}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mu)}label.chk{flex-direction:row;align-items:center;color:var(--tx);font-size:15px}label.chk input{width:auto}
+.lb{font-size:13px;color:var(--mu)}.st{flex-wrap:nowrap}.st input{flex:1}.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#ov{position:fixed;top:0;bottom:0;left:0;right:0;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);display:flex;align-items:center;justify-content:center;z-index:9}
+.mb{position:absolute;inset:0;background:rgba(0,0,0,.5)}.md{position:relative;background:var(--bg);border-radius:20px;width:min(580px,94vw);max-height:92%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.rb{display:flex;flex-direction:column;gap:12px;max-width:640px;margin:0 auto}.big{padding:16px;font-size:17px;font-weight:700;color:var(--so);border:0;border-radius:14px;cursor:pointer;font-family:inherit}
+.ex{background:var(--pc);border-radius:14px;padding:12px 14px}textarea#xt{height:220px;font:12px ui-monospace,Menlo,monospace}
+</style></head><body>
+<div id="app"></div><div id="ov" hidden></div>
+<input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx" hidden>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const ST=["Не запущен","Пройден","Провален","Заблокирован"],SC=["var(--nr)","var(--ok)","var(--bad)","var(--blk)"],PR=["Низкий","Средний","Высокий","Критичный"];
+let D={secs:[],cases:[],next:1,sid:1},T="auto",V={sec:"all",q:"",f:-1,view:"list",run:0,ids:[]},E=null,pend=null,IM=[];
+try{const r=localStorage.getItem("tc.v1");if(r)D=Object.assign(D,JSON.parse(r));T=localStorage.getItem("tc.theme")||"auto"}catch(e){}
+const save=()=>{try{localStorage.setItem("tc.v1",JSON.stringify(D))}catch(e){}};
+const $=s=>document.querySelector(s),esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const code=c=>"TC-"+String(c.id).padStart(3,"0"),byId=id=>D.cases.find(c=>c.id===+id),secOf=c=>(D.secs.find(s=>s.id===c.sec)||{}).name||"";
+const scoped=()=>D.cases.filter(c=>V.sec==="all"||(V.sec==="none"?c.sec==null:c.sec===V.sec));
+const bar=a=>`<div class="bar">${[1,2,3,0].map(s=>{const k=a.filter(c=>c.st===s).length;return k?`<i style="flex:${k};background:${SC[s]}"></i>`:""}).join("")}</div>`;
+const applyTheme=()=>T==="auto"?document.documentElement.removeAttribute("data-theme"):document.documentElement.setAttribute("data-theme",T);
+const modal=h=>{const o=$("#ov");o.hidden=false;o.innerHTML=`<div class="mb" data-a="x"></div><div class="md">${h}</div>`},closeM=()=>{$("#ov").hidden=true;$("#ov").innerHTML=""};
+function ask(t,text,ok,fn,inp){pend=fn;modal(`<h3>${t}</h3>${text?`<p class="mu" style="margin:0">${text}</p>`:""}${inp!=null?`<input id="f_n" value="${esc(inp)}">`:""}<div class="row"><button class="b p" data-a="ok">${ok}</button><button class="b t" data-a="x">Отмена</button></div>`);const i=$("#f_n");if(i)i.focus()}
+const info=(t,h)=>modal(`<h3>${t}</h3><div>${h}</div><div class="row"><button class="b p" data-a="x">Понятно</button></div>`);
+const navItem=(id,n,k)=>`<button class="nv${V.sec===id?" on":""}" data-a="sec" data-id="${id}"><span>${esc(n)}</span><small>${k}</small></button>`;
+const card=c=>`<div class="card cs" style="--c:${SC[c.st]}" data-a="open" data-id="${c.id}"><div class="row"><span class="mu mono">${code(c)}</span>${V.sec==="all"&&secOf(c)?`<small style="color:var(--pr)">${esc(secOf(c))}</small>`:""}${c.bug?'<span class="bug">🐞 Баг</span>':""}<span class="sp"></span><span class="pb">${[0,1,2,3].map(i=>`<u class="${i<=c.pr?"on":""}" style="height:${5+i*3}px"></u>`).join("")}</span><small class="mu">${PR[c.pr]}</small></div><h4>${esc(c.title)}</h4>${c.desc?`<div class="mu">${esc(c.desc)}</div>`:""}<div class="row"><select class="pill" data-a="st" data-id="${c.id}" style="color:${SC[c.st]};background:color-mix(in srgb,${SC[c.st]} 14%,transparent)">${ST.map((s,i)=>`<option value="${i}"${c.st===i?" selected":""}>${s}</option>`).join("")}</select><span class="sp"></span>${c.steps.length?`<small class="mu">шагов: ${c.steps.length}</small>`:""}</div></div>`;
+function renderList(){const l=$("#list");if(!l)return;const a=scoped().filter(c=>(V.f<0||c.st===V.f)&&(!V.q||(c.title+code(c)+c.desc).toLowerCase().includes(V.q.toLowerCase())));l.innerHTML=a.length?a.map(card).join(""):`<p class="mu c">${scoped().length?"Ничего не найдено":"Здесь пока нет кейсов"}</p>`}
+function render(){if(V.view==="run")return renderRun();
+const a=scoped(),loose=D.cases.filter(c=>c.sec==null).length,real=typeof V.sec==="number",nm=V.sec==="all"?"Все кейсы":V.sec==="none"?"Без раздела":secOf({sec:V.sec});
+$("#app").innerHTML=`<div class="w"><div class="row"><h1>Тест-кейсы</h1><span class="sp"></span><button class="b t" data-a="theme">${{auto:"Тема: авто",light:"Светлая",dark:"Тёмная"}[T]}</button><button class="b t" data-a="imp">Импорт</button><button class="b t" data-a="exp">Экспорт</button></div>
+<div class="g"><nav class="nav">${navItem("all","Все кейсы",D.cases.length)}${D.secs.map(s=>navItem(s.id,s.name,D.cases.filter(c=>c.sec===s.id).length)).join("")}${loose&&D.secs.length?navItem("none","Без раздела",loose):""}<button class="b t" data-a="addsec">+ Раздел</button></nav>
+<main><div class="row"><h2>${esc(nm)}</h2><span class="sp"></span>${real?'<button class="b t sm" data-a="rensec">Переименовать</button><button class="b t sm" data-a="delsec">Удалить раздел</button>':""}<button class="b p" data-a="new">+ Новый кейс</button></div>
+${a.length?`<div class="mu">Пройдено ${a.filter(c=>c.st===1).length} из ${a.length}</div>${bar(a)}<div class="row"><button class="b t" data-a="run">▶ Начать прогон</button></div>
+<div class="fl"><button class="ch${V.f<0?" on":""}" data-a="flt" data-id="-1">Все ${a.length}</button>${ST.map((s,i)=>`<button class="ch${V.f===i?" on":""}" data-a="flt" data-id="${i}">${s} ${a.filter(c=>c.st===i).length}</button>`).join("")}</div>
+<input id="q" placeholder="Название или номер, например TC-007" value="${esc(V.q)}">`:""}<div id="list" style="display:flex;flex-direction:column;gap:12px"></div></main></div></div>`;renderList()}
+function steps(){$("#steps").innerHTML=E.steps.map((s,i)=>`<div class="row st"><b class="mu">${i+1}</b><input class="si" data-i="${i}" value="${esc(s)}" placeholder="Действие"><button class="b t sm" data-a="up" data-id="${i}"${i?"":" disabled"}>↑</button><button class="b t sm" data-a="dn" data-id="${i}"${i<E.steps.length-1?"":" disabled"}>↓</button><button class="b t sm" data-a="rm" data-id="${i}">✕</button></div>`).join("")}
+function openEd(id){const c=id?byId(id):{title:"",desc:"",pre:"",steps:[],exp:"",pr:1,st:0,sec:typeof V.sec==="number"?V.sec:null,bug:false,bugText:""};E={id:id||0,steps:c.steps.length?[...c.steps]:[""]};
+modal(`<h3>${id?code(c):"Новый тест-кейс"}</h3><label>Название<input id="f_t" value="${esc(c.title)}"></label>
+<label>Раздел<select id="f_s"><option value="">Без раздела</option>${D.secs.map(s=>`<option value="${s.id}"${c.sec===s.id?" selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
+<div class="row2"><label>Приоритет<select id="f_p">${PR.map((p,i)=>`<option value="${i}"${c.pr===i?" selected":""}>${p}</option>`).join("")}</select></label><label>Статус<select id="f_st">${ST.map((p,i)=>`<option value="${i}"${c.st===i?" selected":""}>${p}</option>`).join("")}</select></label></div>
+<label>Описание<textarea id="f_d" rows="2">${esc(c.desc)}</textarea></label><label>Предусловия<textarea id="f_pre" rows="2">${esc(c.pre)}</textarea></label>
+<div class="lb">Шаги</div><div id="steps" style="display:flex;flex-direction:column;gap:8px"></div><div><button class="b t sm" data-a="addstep">+ Добавить шаг</button></div>
+<label>Ожидаемый результат<textarea id="f_e" rows="3">${esc(c.exp)}</textarea></label>
+<label class="chk"><input type="checkbox" id="f_b"${c.bug?" checked":""}>🐞 В кейсе найден баг</label><label id="bugw"${c.bug?"":" hidden"}>Что не так (фактический результат)<textarea id="f_bt" rows="3">${esc(c.bugText)}</textarea></label>
+<div class="row"><button class="b p" data-a="saveed">Сохранить</button>${id?'<button class="b t" data-a="dup">Копия</button><button class="b t" data-a="deled">Удалить</button>':""}<span class="sp"></span><button class="b t" data-a="x">Отмена</button></div>`);steps()}
+function readForm(){const t=$("#f_t").value.trim();if(!t){$("#f_t").classList.add("err");$("#f_t").focus();return null}
+return{title:t,desc:$("#f_d").value.trim(),pre:$("#f_pre").value.trim(),steps:E.steps.map(s=>s.trim()).filter(Boolean),exp:$("#f_e").value.trim(),pr:+$("#f_p").value,st:+$("#f_st").value,sec:$("#f_s").value?+$("#f_s").value:null,bug:$("#f_b").checked,bugText:$("#f_bt").value.trim()}}
+function renderRun(){const q=V.ids.map(byId).filter(Boolean),c=q[V.run];
+if(!q.length){V.view="list";return render()}
+if(!c){const cnt=i=>q.filter(x=>x.st===i).length,un=cnt(0);$("#app").innerHTML=`<div class="w rb"><h1>Прогон завершён</h1><div class="mu">Пройдено ${cnt(1)} из ${q.length}</div>${bar(q)}${[1,2,3,0].map(i=>`<div class="row"><b style="color:${SC[i]}">●</b>${ST[i]}<span class="sp"></span><b>${cnt(i)}</b></div>`).join("")}${un?`<button class="b p" data-a="rununrun">К непройденным (${un})</button>`:""}<button class="b t" data-a="runagain">Пройти сначала</button><button class="b t" data-a="runexit">К списку</button></div>`;return}
+$("#app").innerHTML=`<div class="w rb"><div class="row"><span class="mu">Кейс ${V.run+1} из ${q.length}</span><span class="sp"></span><button class="b t sm" data-a="runexit">Выйти</button></div>${bar(q)}
+<div class="row"><span class="mu mono">${code(c)}</span><span class="sp"></span><small class="mu">${PR[c.pr]}</small></div><h2 style="font-size:22px">${esc(c.title)}</h2><div><span class="pill" style="color:${SC[c.st]};background:color-mix(in srgb,${SC[c.st]} 14%,transparent)">${ST[c.st]}</span> ${c.bug?'<span class="bug">🐞 Баг</span>':""}</div>
+${c.desc?`<div class="mu">${esc(c.desc)}</div>`:""}${c.pre?`<div><div class="lb">Предусловия</div>${esc(c.pre)}</div>`:""}
+${c.steps.length?`<div><div class="lb">Шаги</div><ol style="margin:4px 0;padding-left:22px">${c.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol></div>`:""}
+${c.exp?`<div class="ex"><div class="lb">Ожидаемый результат</div>${esc(c.exp)}</div>`:""}${c.bug&&c.bugText?`<div class="ex" style="color:var(--bad)">${esc(c.bugText)}</div>`:""}
+<button class="big" style="background:var(--ok)" data-a="mk" data-id="1">Пройден</button><div class="row2"><button class="big" style="background:var(--bad)" data-a="mk" data-id="2">Провален</button><button class="big" style="background:var(--blk)" data-a="mk" data-id="3">Заблокирован</button></div>
+<div class="row"><button class="b t" data-a="runprev"${V.run?"":" disabled"}>← Назад</button><span class="sp"></span><button class="b t" data-a="runskip">Пропустить →</button></div></div>`}
+const AL={sec:["раздел","section","suite","набор","группа","модуль"],title:["название","title","name","заголовок","кейс","тест-кейс","наименование","summary"],desc:["описание","description"],pre:["предусловия","предусловие","preconditions","precondition"],steps:["шаги","шаг","steps","step","действия"],exp:["ожидаемый результат","ожидаемый","expected","expected result","результат"],pr:["приоритет","priority"],st:["статус","status"]};
+const PM={"низкий":0,low:0,1:0,"средний":1,medium:1,normal:1,2:1,"высокий":2,high:2,3:2,"критичный":3,"критический":3,critical:3,blocker:3,4:3},SM={"не запущен":0,"not run":0,new:0,"новый":0,"пройден":1,passed:1,pass:1,ok:1,"провален":2,failed:2,fail:2,"не пройден":2,"заблокирован":3,blocked:3};
+const nz=s=>String(s).toLowerCase().replace(/ё/g,"е").replace(/[\s_]+/g," ").trim().replace(/[*:]+$/,"").trim();
+function csv(t,d){const r=[];let row=[],c="",q=0;for(let i=0;i<t.length;i++){const h=t[i];if(q){if(h==='"'){if(t[i+1]==='"'){c+='"';i++}else q=0}else c+=h}else if(h==='"')q=1;else if(h===d){row.push(c);c=""}else if(h==="\n"){row.push(c);r.push(row);row=[];c=""}else c+=h}if(c||row.length){row.push(c);r.push(row)}return r}
+async function readRows(f){const b=await f.arrayBuffer(),u=new Uint8Array(b);
+if(u[0]===0x50&&u[1]===0x4B){if(!window.XLSX)throw new Error("библиотека Excel не загрузилась, сохраните файл как CSV");const wb=XLSX.read(b,{type:"array"});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:""})}
+let t;try{t=new TextDecoder("utf-8",{fatal:true}).decode(b)}catch(e){t=new TextDecoder("windows-1251").decode(b)}
+t=t.replace(/^\uFEFF/,"").replace(/\r\n?/g,"\n");const f1=t.split("\n")[0];return csv(t,[";","\t",","].map(c=>[c,f1.split(c).length]).sort((a,b)=>b[1]-a[1])[0][0])}
+function parseRows(rows){const hi=rows.findIndex(r=>r.some(x=>AL.title.includes(nz(x))));if(hi<0)return{err:"Не найден столбец «Название». В первой строке нужны заголовки столбцов."};
+const col={};rows[hi].forEach((x,i)=>{const k=Object.keys(AL).find(k=>AL[k].includes(nz(x)));if(k&&!(k in col))col[k]=i});const out=[],warn=[];
+for(let i=hi+1;i<rows.length;i++){const r=rows[i];if(r.every(x=>!String(x).trim()))continue;const g=k=>k in col?String(r[col[k]]==null?"":r[col[k]]).trim():"",t=g("title"),n=i+1;
+if(!t){warn.push("Строка "+n+" пропущена: нет названия");continue}let p=1,s=0;
+if(g("pr")){const v=PM[nz(g("pr"))];if(v===undefined)warn.push("Строка "+n+": приоритет «"+g("pr")+"» не распознан");else p=v}
+if(g("st")){const v=SM[nz(g("st"))];if(v===undefined)warn.push("Строка "+n+": статус «"+g("st")+"» не распознан");else s=v}
+out.push({sec:g("sec"),title:t,desc:g("desc"),pre:g("pre"),steps:g("steps").split(/\n|\|/).map(x=>x.replace(/^\s*(\d+[.)]|[-•*])\s+/,"").trim()).filter(Boolean),exp:g("exp"),pr:p,st:s})}
+return out.length?{out,warn}:{err:"В файле не нашлось ни одного кейса с названием."}}
+const A={x:closeM,theme(){T={auto:"light",light:"dark",dark:"auto"}[T];try{localStorage.setItem("tc.theme",T)}catch(e){}applyTheme();render()},
+sec(id){V.sec=id==="all"||id==="none"?id:+id;V.f=-1;V.q="";render()},flt(id){V.f=+id;render()},open:id=>openEd(+id),new:()=>openEd(0),
+ok(){const i=$("#f_n"),v=i?i.value.trim():null,f=pend;if(i&&!v)return;closeM();if(f)f(v)},
+addsec:()=>ask("Новый раздел","","Создать",n=>{const s={id:D.sid++,name:n};D.secs.push(s);V.sec=s.id;save();render()},""),
+rensec:()=>ask("Переименовать раздел","","Сохранить",n=>{D.secs.find(s=>s.id===V.sec).name=n;save();render()},secOf({sec:V.sec})),
+delsec:()=>ask("Удалить раздел?","Кейсы из него не удаляются, они останутся без раздела.","Удалить",()=>{D.cases.forEach(c=>{if(c.sec===V.sec)c.sec=null});D.secs=D.secs.filter(s=>s.id!==V.sec);V.sec="all";save();render()}),
+addstep(){E.steps.push("");steps()},up(i){i=+i;[E.steps[i-1],E.steps[i]]=[E.steps[i],E.steps[i-1]];steps()},dn(i){i=+i;[E.steps[i+1],E.steps[i]]=[E.steps[i],E.steps[i+1]];steps()},rm(i){E.steps.splice(+i,1);if(!E.steps.length)E.steps=[""];steps()},
+saveed(){const o=readForm();if(!o)return;if(E.id)Object.assign(byId(E.id),o);else D.cases.push(Object.assign({id:D.next++},o));save();closeM();render()},
+dup(){const o=readForm();if(!o)return;o.title+=" (копия)";o.st=0;D.cases.push(Object.assign({id:D.next++},o));save();closeM();render()},
+deled(){const id=E.id;ask("Удалить тест-кейс?","«"+esc(byId(id).title)+"» будет удалён без возможности восстановления.","Удалить",()=>{D.cases=D.cases.filter(c=>c.id!==id);save();render()})},
+imp:()=>$("#file").click(),
+doimp(){IM.forEach(o=>{let sid=null;if(o.sec){let s=D.secs.find(s=>s.name.toLowerCase()===o.sec.toLowerCase());if(!s){s={id:D.sid++,name:o.sec};D.secs.push(s)}sid=s.id}D.cases.push({id:D.next++,title:o.title,desc:o.desc,pre:o.pre,steps:o.steps,exp:o.exp,pr:o.pr,st:o.st,sec:sid,bug:false,bugText:""})});save();closeM();V.sec="all";render()},
+exp(){const q=s=>/[\t\n"]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s,rows=[["Раздел","Название","Описание","Предусловия","Шаги","Ожидаемый результат","Приоритет","Статус"]].concat(D.cases.map(c=>[secOf(c),c.title,c.desc,c.pre,c.steps.map((s,i)=>(i+1)+". "+s).join("\n"),c.exp,PR[c.pr],ST[c.st]]));
+modal(`<h3>Экспорт</h3><p class="mu" style="margin:0">Нажмите «Скопировать» и вставьте в Excel или Google Таблицы (Ctrl+V). Тот же формат понимает импорт и приложение для Android.</p><textarea id="xt" readonly>${esc(rows.map(r=>r.map(q).join("\t")).join("\n"))}</textarea><div class="row"><button class="b p" data-a="copy">Скопировать</button><button class="b t" data-a="x">Закрыть</button></div>`)},
+copy(_,el){const t=$("#xt");t.select();const ok=()=>el.textContent="Скопировано ✓";(navigator.clipboard?navigator.clipboard.writeText(t.value):Promise.reject()).then(ok,()=>{try{document.execCommand("copy");ok()}catch(e){}})},
+run(){const a=scoped();V.ids=a.map(c=>c.id);const i=a.findIndex(c=>c.st===0);V.run=i<0?0:i;V.view="run";render()},
+mk(s){byId(V.ids[V.run]).st=+s;save();V.run++;render()},runprev(){V.run=Math.max(0,V.run-1);render()},runskip(){V.run++;render()},
+runagain(){V.run=0;render()},rununrun(){V.run=Math.max(0,V.ids.findIndex(id=>byId(id).st===0));render()},runexit(){V.view="list";render()}};
+document.addEventListener("click",e=>{const el=e.target.closest("[data-a]");if(el&&A[el.dataset.a])A[el.dataset.a](el.dataset.id,el)});
+document.addEventListener("change",e=>{const el=e.target;if(el.dataset.a==="st"){byId(el.dataset.id).st=+el.value;save();render()}else if(el.id==="f_b")$("#bugw").hidden=!el.checked});
+document.addEventListener("input",e=>{const el=e.target;if(el.id==="q"){V.q=el.value;renderList()}else if(el.classList.contains("si"))E.steps[+el.dataset.i]=el.value;else if(el.id==="f_t")el.classList.remove("err")});
+$("#file").addEventListener("change",async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;let r;try{r=parseRows(await readRows(f))}catch(x){return info("Импорт","Не удалось прочитать файл: "+esc(x.message))}
+if(r.err)return info("Импорт",esc(r.err));IM=r.out;const w=r.warn;modal(`<h3>Найдено кейсов: ${r.out.length}</h3>${w.length?`<div class="mu">${w.slice(0,5).map(esc).join("<br>")}${w.length>5?"<br>и ещё "+(w.length-5):""}</div>`:""}<div class="row"><button class="b p" data-a="doimp">Импортировать</button><button class="b t" data-a="x">Отмена</button></div>`)});
+applyTheme();render();
+</script></body></html>
