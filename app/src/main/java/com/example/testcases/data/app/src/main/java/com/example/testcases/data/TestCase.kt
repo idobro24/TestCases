@@ -38,6 +38,12 @@ data class TestCase(
     val status: Status = Status.NOT_RUN,
     /** null — кейс без раздела. */
     val sectionId: Long? = null,
+    /** Отмечен ли в кейсе баг. */
+    val hasBug: Boolean = false,
+    /** Что именно не так (фактический результат). */
+    val bugDescription: String = "",
+    /** Имена файлов скриншотов в папке приложения, разделитель — [STEP_SEP]. */
+    val bugScreens: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -45,6 +51,9 @@ data class TestCase(
 
     val stepList: List<String>
         get() = if (steps.isEmpty()) emptyList() else steps.split(STEP_SEP)
+
+    val bugScreenList: List<String>
+        get() = if (bugScreens.isEmpty()) emptyList() else bugScreens.split(STEP_SEP)
 
     companion object {
         const val STEP_SEP = "\u001F"
