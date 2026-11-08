@@ -18,7 +18,8 @@ object CsvExport {
 
     private val header = listOf(
         "Раздел", "Название", "Описание", "Предусловия",
-        "Шаги", "Ожидаемый результат", "Приоритет", "Статус"
+        "Шаги", "Ожидаемый результат", "Приоритет", "Статус",
+        "Баг", "Описание бага"
     )
 
     /** Таблица для экспорта: первая строка — заголовок. */
@@ -38,7 +39,9 @@ object CsvExport {
                     steps,
                     c.expectedResult,
                     c.priority.label,
-                    c.status.label
+                    c.status.label,
+                    if (c.hasBug) "Да" else "",
+                    c.bugDescription
                 )
             )
         }
