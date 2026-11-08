@@ -32,6 +32,10 @@ import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -266,7 +270,7 @@ fun EditorScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             AppField(
                 value = title,
@@ -276,72 +280,41 @@ fun EditorScreen(
                 supporting = if (showErrors && title.isBlank()) "Введите название кейса" else null
             )
 
-            FormSection("Раздел") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = sectionId == null,
-                        onClick = { sectionId = null },
-                        label = { Text("Без раздела") }
-                    )
-                    sections.forEach { s ->
-                        FilterChip(
-                            selected = sectionId == s.id,
-                            onClick = { sectionId = s.id },
-                            label = { Text(s.name) }
-                        )
-                    }
-                }
-            }
+            DropdownField(
+                label = "Раздел",
+                value = sectionId,
+                options = listOf<Long?>(null) + sections.map { it.id },
+                optionText = { id -> sections.firstOrNull { it.id == id }?.name ?: "Без раздела" },
+                onSelect = { sectionId = it }
+            )
 
-            FormSection("Приоритет") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Priority.entries.forEach { p ->
-                        FilterChip(
-                            selected = priority == p,
-                            onClick = { priority = p },
-                            label = { Text(p.label) }
-                        )
-                    }
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DropdownField(
+                    label = "Приоритет",
+                    value = priority,
+                    options = Priority.entries.toList(),
+                    optionText = { it.label },
+                    onSelect = { priority = it },
+                    modifier = Modifier.weight(1f)
+                )
+                DropdownField(
+                    label = "Статус",
+                    value = status,
+                    options = Status.entries.toList(),
+                    optionText = { it.label },
+                    onSelect = { status = it },
+                    modifier = Modifier.weight(1f),
+                    leading = { st -> Box(Modifier.size(10.dp).clip(CircleShape).background(st.color())) }
+                )
             }
-
-            FormSection("Статус") {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Status.entries.forEach { s ->
-                        val c = s.color()
-                        val selected = status == s
-                        FilterChip(
-                            selected = selected,
-                            onClick = { status = s },
-                            label = { Text(s.label) },
-                            leadingIcon = {
-                                Box(Modifier.size(8.dp).clip(CircleShape).background(c))
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = c.copy(alpha = 0.16f),
-                                selectedLabelColor = c
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = selected,
-                                selectedBorderColor = c
-                            )
-                        )
-                    }
-                }
-            }
-
-            AppField(description, { description = it }, "Описание", minLines = 2)
-            AppField(preconditions, { preconditions = it }, "Предусловия", minLines = 2)
 
             FormSection("Шаги") {
                 StepsEditor(steps = steps, onChange = { steps = it })
             }
 
-            AppField(expected, { expected = it }, "Ожидаемый результат", minLines = 3)
+            AppField(expected, { expected = it }, "Ожидаемый результат", minLines = 2)
+            AppField(preconditions, { preconditions = it }, "Предусловия", minLines = 2)
+            AppField(description, { description = it }, "Описание", minLines = 2)
 
             BugSection(
                 hasBug = hasBug,
@@ -652,3 +625,54 @@ private fun TestCase.toSnapshot() = FormSnapshot(
     bugDescription = bugDescription.trim(),
     bugScreens = bugScreenList
 )
+
+// ---------------------------------------------------------------- выпадающий список
+
+/** Поле с выпадающим списком: компактнее набора кнопок и не отодвигает шаги вниз. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> DropdownField(
+    label: String,
+    value: T,
+    options: List<T>,
+    optionText: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    leading: (@Composable (T) -> Unit)? = null
+) {
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = open,
+        onExpandedChange = { open = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = optionText(value),
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(label) },
+            leadingIcon = leading?.let { l -> { l(value) } },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+            ),
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionText(option)) },
+                    leadingIcon = leading?.let { l -> { l(option) } },
+                    onClick = {
+                        onSelect(option)
+                        open = false
+                    }
+                )
+            }
+        }
+    }
+}
