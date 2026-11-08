@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- контур листа -->
+    <path
+        android:pathData="M38,29.5 H70 A4.5,4.5 0 0 1 74.5,34 V74 A4.5,4.5 0 0 1 70,78.5 H38 A4.5,4.5 0 0 1 33.5,74 V34 A4.5,4.5 0 0 1 38,29.5 Z"
+        android:strokeColor="#000000"
+        android:strokeWidth="3" />
+
+    <!-- зажим -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M48,24 H60 A3,3 0 0 1 63,27 V30 A3,3 0 0 1 60,33 H48 A3,3 0 0 1 45,30 V27 A3,3 0 0 1 48,24 Z" />
+
+    <!-- галочка -->
+    <path
+        android:pathData="M41,47 L50,56 L67,38"
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- полоса -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M41,67 H67 A3,3 0 0 1 70,70 A3,3 0 0 1 67,73 H41 A3,3 0 0 1 38,70 A3,3 0 0 1 41,67 Z" />
+</vector>
