@@ -487,6 +487,10 @@ private fun TestCaseCard(
                         )
                     }
                     Spacer(Modifier.weight(1f))
+                    if (tc.hasBug) {
+                        BugTag()
+                        Spacer(Modifier.width(10.dp))
+                    }
                     PriorityTag(tc.priority)
                 }
                 Text(
@@ -521,6 +525,19 @@ private fun TestCaseCard(
                 }
             }
         }
+    }
+}
+
+/** Метка «Баг» на карточке кейса. */
+@Composable
+private fun BugTag() {
+    val color = MaterialTheme.colorScheme.error
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Icon(Icons.Rounded.BugReport, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+        Text("Баг", style = MaterialTheme.typography.labelMedium, color = color)
     }
 }
 
