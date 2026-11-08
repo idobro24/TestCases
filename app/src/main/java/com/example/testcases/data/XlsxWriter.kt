@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
  */
 object XlsxWriter {
 
-    private val widths = listOf(16, 36, 34, 30, 50, 42, 12, 15)
+    private val widths = listOf(16, 36, 34, 30, 50, 42, 12, 15, 8, 40)
 
     private const val NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     private const val NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
