@@ -32,9 +32,13 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mu)}
 .mb{position:absolute;inset:0;background:rgba(0,0,0,.5)}.md{position:relative;background:var(--bg);border-radius:20px;width:min(580px,94vw);max-height:92%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
 .rb{display:flex;flex-direction:column;gap:12px;max-width:640px;margin:0 auto}.big{padding:16px;font-size:17px;font-weight:700;color:var(--so);border:0;border-radius:14px;cursor:pointer;font-family:inherit}
 .ex{background:var(--pc);border-radius:14px;padding:12px 14px}textarea#xt{height:220px;font:12px ui-monospace,Menlo,monospace}
+.hd{cursor:grab;touch-action:none;user-select:none;padding:0 6px;color:var(--mu);font-size:20px}.st.drag{opacity:.6}
+.th{position:relative;width:84px;height:84px}.th img{width:100%;height:100%;object-fit:cover;border-radius:10px;cursor:pointer;background:var(--ol)}.th button{position:absolute;top:3px;right:3px}
+#lb{position:fixed;top:0;bottom:0;left:0;right:0;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;z-index:99}#lb img{max-width:96vw;max-height:96vh}
+#ts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:12px;z-index:99;max-width:90vw}
 </style></head><body>
-<div id="app"></div><div id="ov" hidden></div>
-<input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx" hidden>
+<div id="app"></div><div id="ov" hidden></div><div id="lb" hidden></div><div id="ts" hidden></div>
+<input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx" hidden><input type="file" id="shotf" accept="image/*" multiple hidden>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const ST=["Не запущен","Пройден","Провален","Заблокирован"],SC=["var(--nr)","var(--ok)","var(--bad)","var(--blk)"],PR=["Низкий","Средний","Высокий","Критичный"];
@@ -60,18 +64,18 @@ $("#app").innerHTML=`<div class="w"><div class="row"><h1>Тест-кейсы</h1
 ${a.length?`<div class="mu">Пройдено ${a.filter(c=>c.st===1).length} из ${a.length}</div>${bar(a)}<div class="row"><button class="b t" data-a="run">▶ Начать прогон</button></div>
 <div class="fl"><button class="ch${V.f<0?" on":""}" data-a="flt" data-id="-1">Все ${a.length}</button>${ST.map((s,i)=>`<button class="ch${V.f===i?" on":""}" data-a="flt" data-id="${i}">${s} ${a.filter(c=>c.st===i).length}</button>`).join("")}</div>
 <input id="q" placeholder="Название или номер, например TC-007" value="${esc(V.q)}">`:""}<div id="list" style="display:flex;flex-direction:column;gap:12px"></div></main></div></div>`;renderList()}
-function steps(){$("#steps").innerHTML=E.steps.map((s,i)=>`<div class="row st"><b class="mu">${i+1}</b><input class="si" data-i="${i}" value="${esc(s)}" placeholder="Действие"><button class="b t sm" data-a="up" data-id="${i}"${i?"":" disabled"}>↑</button><button class="b t sm" data-a="dn" data-id="${i}"${i<E.steps.length-1?"":" disabled"}>↓</button><button class="b t sm" data-a="rm" data-id="${i}">✕</button></div>`).join("")}
-function openEd(id){const c=id?byId(id):{title:"",desc:"",pre:"",steps:[],exp:"",pr:1,st:0,sec:typeof V.sec==="number"?V.sec:null,bug:false,bugText:""};E={id:id||0,steps:c.steps.length?[...c.steps]:[""]};
+function steps(){$("#steps").innerHTML=E.steps.map((s,i)=>`<div class="row st"><span class="hd" title="Потяните, чтобы переместить шаг">⠿</span><b class="mu">${i+1}</b><input class="si" data-i="${i}" value="${esc(s)}" placeholder="Действие"><button class="b t sm" data-a="rm" data-id="${i}">✕</button></div>`).join("")}
+function openEd(id){const c=id?byId(id):{title:"",desc:"",pre:"",steps:[],exp:"",pr:1,st:0,sec:typeof V.sec==="number"?V.sec:null,bug:false,bugText:""};E={id:id||0,shots:[...(c.shots||[])],steps:c.steps.length?[...c.steps]:[""]};
 modal(`<h3>${id?code(c):"Новый тест-кейс"}</h3><label>Название<input id="f_t" value="${esc(c.title)}"></label>
 <label>Раздел<select id="f_s"><option value="">Без раздела</option>${D.secs.map(s=>`<option value="${s.id}"${c.sec===s.id?" selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
 <div class="row2"><label>Приоритет<select id="f_p">${PR.map((p,i)=>`<option value="${i}"${c.pr===i?" selected":""}>${p}</option>`).join("")}</select></label><label>Статус<select id="f_st">${ST.map((p,i)=>`<option value="${i}"${c.st===i?" selected":""}>${p}</option>`).join("")}</select></label></div>
 <label>Описание<textarea id="f_d" rows="2">${esc(c.desc)}</textarea></label><label>Предусловия<textarea id="f_pre" rows="2">${esc(c.pre)}</textarea></label>
 <div class="lb">Шаги</div><div id="steps" style="display:flex;flex-direction:column;gap:8px"></div><div><button class="b t sm" data-a="addstep">+ Добавить шаг</button></div>
 <label>Ожидаемый результат<textarea id="f_e" rows="3">${esc(c.exp)}</textarea></label>
-<label class="chk"><input type="checkbox" id="f_b"${c.bug?" checked":""}>🐞 В кейсе найден баг</label><label id="bugw"${c.bug?"":" hidden"}>Что не так (фактический результат)<textarea id="f_bt" rows="3">${esc(c.bugText)}</textarea></label>
-<div class="row"><button class="b p" data-a="saveed">Сохранить</button>${id?'<button class="b t" data-a="dup">Копия</button><button class="b t" data-a="deled">Удалить</button>':""}<span class="sp"></span><button class="b t" data-a="x">Отмена</button></div>`);steps()}
+<label class="chk"><input type="checkbox" id="f_b"${c.bug?" checked":""}>🐞 В кейсе найден баг</label><div id="bugw"${c.bug?"":" hidden"} style="display:flex;flex-direction:column;gap:12px"><label>Что не так (фактический результат)<textarea id="f_bt" rows="3">${esc(c.bugText)}</textarea></label><div class="lb">Скриншоты (до 10; можно вставить из буфера обмена: Ctrl+V)</div><div id="shots" class="row"></div><div><button class="b p" data-a="tg">Отправить в Telegram</button></div></div>
+<div class="row"><button class="b p" data-a="saveed">Сохранить</button>${id?'<button class="b t" data-a="dup">Копия</button><button class="b t" data-a="deled">Удалить</button>':""}<span class="sp"></span><button class="b t" data-a="x">Отмена</button></div>`);steps();shotsDraw()}
 function readForm(){const t=$("#f_t").value.trim();if(!t){$("#f_t").classList.add("err");$("#f_t").focus();return null}
-return{title:t,desc:$("#f_d").value.trim(),pre:$("#f_pre").value.trim(),steps:E.steps.map(s=>s.trim()).filter(Boolean),exp:$("#f_e").value.trim(),pr:+$("#f_p").value,st:+$("#f_st").value,sec:$("#f_s").value?+$("#f_s").value:null,bug:$("#f_b").checked,bugText:$("#f_bt").value.trim()}}
+return{title:t,desc:$("#f_d").value.trim(),pre:$("#f_pre").value.trim(),steps:E.steps.map(s=>s.trim()).filter(Boolean),exp:$("#f_e").value.trim(),pr:+$("#f_p").value,st:+$("#f_st").value,sec:$("#f_s").value?+$("#f_s").value:null,bug:$("#f_b").checked,bugText:$("#f_bt").value.trim(),shots:E.shots}}
 function renderRun(){const q=V.ids.map(byId).filter(Boolean),c=q[V.run];
 if(!q.length){V.view="list";return render()}
 if(!c){const cnt=i=>q.filter(x=>x.st===i).length,un=cnt(0);$("#app").innerHTML=`<div class="w rb"><h1>Прогон завершён</h1><div class="mu">Пройдено ${cnt(1)} из ${q.length}</div>${bar(q)}${[1,2,3,0].map(i=>`<div class="row"><b style="color:${SC[i]}">●</b>${ST[i]}<span class="sp"></span><b>${cnt(i)}</b></div>`).join("")}${un?`<button class="b p" data-a="rununrun">К непройденным (${un})</button>`:""}<button class="b t" data-a="runagain">Пройти сначала</button><button class="b t" data-a="runexit">К списку</button></div>`;return}
@@ -121,5 +125,34 @@ document.addEventListener("change",e=>{const el=e.target;if(el.dataset.a==="st")
 document.addEventListener("input",e=>{const el=e.target;if(el.id==="q"){V.q=el.value;renderList()}else if(el.classList.contains("si"))E.steps[+el.dataset.i]=el.value;else if(el.id==="f_t")el.classList.remove("err")});
 $("#file").addEventListener("change",async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;let r;try{r=parseRows(await readRows(f))}catch(x){return info("Импорт","Не удалось прочитать файл: "+esc(x.message))}
 if(r.err)return info("Импорт",esc(r.err));IM=r.out;const w=r.warn;modal(`<h3>Найдено кейсов: ${r.out.length}</h3>${w.length?`<div class="mu">${w.slice(0,5).map(esc).join("<br>")}${w.length>5?"<br>и ещё "+(w.length-5):""}</div>`:""}<div class="row"><button class="b p" data-a="doimp">Импортировать</button><button class="b t" data-a="x">Отмена</button></div>`)});
+const toast=t=>{const e=$("#ts");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,7000)};
+const db=new Promise((ok,no)=>{try{const r=indexedDB.open("tc",1);r.onupgradeneeded=()=>r.result.createObjectStore("img");r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)}catch(e){no(e)}});
+const tx=(m,f)=>db.then(d=>new Promise((ok,no)=>{const t=d.transaction("img",m),q=f(t.objectStore("img"));t.oncomplete=()=>ok(q.result);t.onerror=()=>no(t.error)}));
+const putImg=async b=>{const id="i"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);await tx("readwrite",s=>s.put(b,id));return id},getImg=id=>tx("readonly",s=>s.get(id)),delImg=id=>tx("readwrite",s=>s.delete(id));
+async function shrink(f){const b=await createImageBitmap(f),k=Math.min(1,1600/Math.max(b.width,b.height)),c=document.createElement("canvas");c.width=Math.round(b.width*k);c.height=Math.round(b.height*k);c.getContext("2d").drawImage(b,0,0,c.width,c.height);return new Promise(ok=>c.toBlob(ok,"image/jpeg",.85))}
+function shotsDraw(){const h=$("#shots");if(!h)return;h.innerHTML=E.shots.map(id=>`<div class="th"><img data-id="${id}" data-a="view" alt="Скриншот"><button class="b t sm" data-a="rmshot" data-id="${id}">✕</button></div>`).join("")+(E.shots.length<10?'<button class="b t" data-a="addshot">+ Скриншот</button>':"");h.querySelectorAll("img").forEach(i=>getImg(i.dataset.id).then(b=>{if(b)i.src=URL.createObjectURL(b)}))}
+async function addShots(fs){for(const f of fs.filter(f=>f.type.startsWith("image/"))){if(E.shots.length>=10)break;try{E.shots.push(await putImg(await shrink(f)))}catch(x){toast("Не удалось сохранить скриншот")}}shotsDraw()}
+A.addshot=()=>$("#shotf").click();A.rmshot=id=>{E.shots=E.shots.filter(x=>x!==id);shotsDraw()};A.view=(_,el)=>{$("#lb").innerHTML=`<img src="${el.src}" alt="">`;$("#lb").hidden=false};
+$("#lb").onclick=()=>{$("#lb").hidden=true};
+$("#shotf").addEventListener("change",e=>{const fs=[...e.target.files];e.target.value="";addShots(fs)});
+document.addEventListener("paste",e=>{const b=$("#bugw");if(!E||!b||b.hidden)return;const fs=[...(e.clipboardData?e.clipboardData.files:[])].filter(f=>f.type.startsWith("image/"));if(fs.length){e.preventDefault();addShots(fs)}});
+let DR=null;
+document.addEventListener("pointerdown",e=>{const h=e.target.closest(".hd");if(!h)return;DR=h.closest(".st");DR.classList.add("drag");$("#steps").setPointerCapture(e.pointerId);e.preventDefault()});
+document.addEventListener("pointermove",e=>{if(!DR)return;const t=document.elementFromPoint(e.clientX,e.clientY),r=t&&t.closest("#steps .st");if(r&&r!==DR)r.parentNode.insertBefore(DR,DR.compareDocumentPosition(r)&4?r.nextSibling:r)});
+const endDrag=()=>{if(!DR)return;DR=null;E.steps=[...document.querySelectorAll("#steps .si")].map(i=>i.value);steps()};
+document.addEventListener("pointerup",endDrag);document.addEventListener("pointercancel",endDrag);
+A.tg=async()=>{const o=readForm();if(!o)return;const sn=o.sec?(D.secs.find(s=>s.id===o.sec)||{}).name:"",L=["🐞 Баг: "+(E.id?code({id:E.id})+" — ":"")+o.title,[sn&&"Раздел: "+sn,"Приоритет: "+PR[o.pr]].filter(Boolean).join(" · ")],blk=(t,b)=>{if(b)L.push("",t+":",b)};
+blk("Что не так",o.bugText);blk("Предусловия",o.pre);blk("Шаги воспроизведения",o.steps.map((s,i)=>(i+1)+". "+s).join("\n"));blk("Ожидаемый результат",o.exp);
+const text=L.join("\n").slice(0,4000),d={text},files=await Promise.all(o.shots.map(async(id,i)=>new File([await getImg(id)],"screen"+(i+1)+".jpg",{type:"image/jpeg"})));if(files.length)d.files=files;
+if(navigator.canShare&&navigator.canShare(d)){try{await navigator.share(d);return}catch(e){if(e.name==="AbortError")return}}
+try{await navigator.clipboard.writeText(text)}catch(e){}
+window.open("https://t.me/share/url?url=%20&text="+encodeURIComponent(text),"_blank");
+toast(files.length?"Текст скопирован. Браузер не умеет прикладывать картинки к Telegram, добавьте скриншоты вручную или отправьте баг с телефона.":"Текст скопирован и передан в Telegram.")};
+const tbl=()=>[["Раздел","Название","Описание","Предусловия","Шаги","Ожидаемый результат","Приоритет","Статус"]].concat(D.cases.map(c=>[secOf(c),c.title,c.desc,c.pre,c.steps.map((s,i)=>(i+1)+". "+s).join("\n"),c.exp,PR[c.pr],ST[c.st]]));
+const dl=(b,n)=>{const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=n;document.body.appendChild(a);a.click();a.remove()};
+A.exp=()=>{const q=s=>/[\t\n"]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;modal(`<h3>Экспорт</h3><p class="mu" style="margin:0">Скачайте файл или скопируйте таблицу и вставьте в Excel или Google Таблицы. Формат понимает импорт и приложение для Android.</p><textarea id="xt" readonly>${esc(tbl().map(r=>r.map(q).join("\t")).join("\n"))}</textarea><div class="row"><button class="b p" data-a="xlsx">Скачать Excel</button><button class="b t" data-a="csvf">Скачать CSV</button><button class="b t" data-a="copy">Скопировать</button><span class="sp"></span><button class="b t" data-a="x">Закрыть</button></div>`)};
+A.xlsx=()=>{if(!window.XLSX)return toast("Библиотека Excel не загрузилась, скачайте CSV");const ws=XLSX.utils.aoa_to_sheet(tbl()),wb=XLSX.utils.book_new();ws["!cols"]=[16,36,34,30,50,42,12,15].map(w=>({wch:w}));XLSX.utils.book_append_sheet(wb,ws,"Кейсы");XLSX.writeFile(wb,"test-cases.xlsx")};
+A.csvf=()=>{const q=s=>/[;\n"]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;dl(new Blob(["\uFEFF"+tbl().map(r=>r.map(q).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"}),"test-cases.csv")};
+tx("readonly",s=>s.getAllKeys()).then(ks=>{const u=new Set(D.cases.flatMap(c=>c.shots||[]));ks.filter(k=>!u.has(k)).forEach(delImg)}).catch(()=>{});
 applyTheme();render();
 </script></body></html>
