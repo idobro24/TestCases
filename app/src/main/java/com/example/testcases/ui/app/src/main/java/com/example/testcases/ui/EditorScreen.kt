@@ -70,6 +70,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.example.testcases.data.BugReport
 import com.example.testcases.data.CaseText
 import com.example.testcases.data.Priority
 import com.example.testcases.data.Status
@@ -101,6 +102,9 @@ fun EditorScreen(
     var priority by rememberSaveable { mutableStateOf(Priority.MEDIUM) }
     var status by rememberSaveable { mutableStateOf(Status.NOT_RUN) }
     var sectionId by rememberSaveable { mutableStateOf(initialSectionId) }
+    var hasBug by rememberSaveable { mutableStateOf(false) }
+    var bugDescription by rememberSaveable { mutableStateOf("") }
+    var bugScreens by rememberSaveable { mutableStateOf(listOf<String>()) }
     var showErrors by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showDiscard by rememberSaveable { mutableStateOf(false) }
@@ -123,6 +127,9 @@ fun EditorScreen(
             priority = tc.priority
             status = tc.status
             sectionId = tc.sectionId
+            hasBug = tc.hasBug
+            bugDescription = tc.bugDescription
+            bugScreens = tc.bugScreenList
             loaded = true
         }
     }
@@ -143,7 +150,10 @@ fun EditorScreen(
             expectedResult = expected.trim(),
             priority = priority,
             status = status,
-            sectionId = sectionId
+            sectionId = sectionId,
+            hasBug = hasBug,
+            bugDescription = bugDescription.trim(),
+            bugScreens = bugScreens.joinToString(TestCase.STEP_SEP)
         )
     }
 
@@ -170,10 +180,17 @@ fun EditorScreen(
         expected = expected.trim(),
         priority = priority,
         status = status,
-        sectionId = sectionId
+        sectionId = sectionId,
+        hasBug = hasBug,
+        bugDescription = bugDescription.trim(),
+        bugScreens = bugScreens
     )
     val baseline: FormSnapshot? = if (isNew) {
-        FormSnapshot("", "", "", emptyList(), "", Priority.MEDIUM, Status.NOT_RUN, initialSectionId)
+        FormSnapshot(
+            title = "", description = "", preconditions = "", steps = emptyList(), expected = "",
+            priority = Priority.MEDIUM, status = Status.NOT_RUN, sectionId = initialSectionId,
+            hasBug = false, bugDescription = "", bugScreens = emptyList()
+        )
     } else {
         original?.toSnapshot()
     }
@@ -184,6 +201,12 @@ fun EditorScreen(
     }
 
     BackHandler(enabled = dirty) { showDiscard = true }
+
+    /** Отправляет отчёт о баге в Telegram: текст и скриншоты из формы. */
+    fun sendBug() {
+        val tc = buildCase() ?: return
+        BugReport.sendToTelegram(context, tc, sections.firstOrNull { it.id == tc.sectionId }?.name)
+    }
 
     /** Отправляет кейс текстом — таким, каким он сейчас в форме. */
     fun shareCase() {
@@ -320,6 +343,16 @@ fun EditorScreen(
 
             AppField(expected, { expected = it }, "Ожидаемый результат", minLines = 3)
 
+            BugSection(
+                hasBug = hasBug,
+                onHasBugChange = { hasBug = it },
+                description = bugDescription,
+                onDescriptionChange = { bugDescription = it },
+                screens = bugScreens,
+                onScreensChange = { bugScreens = it },
+                onSend = ::sendBug
+            )
+
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -383,7 +416,7 @@ private fun FormSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun AppField(
+internal fun AppField(
     value: String,
     onChange: (String) -> Unit,
     label: String,
@@ -600,7 +633,10 @@ private data class FormSnapshot(
     val expected: String,
     val priority: Priority,
     val status: Status,
-    val sectionId: Long?
+    val sectionId: Long?,
+    val hasBug: Boolean,
+    val bugDescription: String,
+    val bugScreens: List<String>
 )
 
 private fun TestCase.toSnapshot() = FormSnapshot(
@@ -611,5 +647,8 @@ private fun TestCase.toSnapshot() = FormSnapshot(
     expected = expectedResult.trim(),
     priority = priority,
     status = status,
-    sectionId = sectionId
+    sectionId = sectionId,
+    hasBug = hasBug,
+    bugDescription = bugDescription.trim(),
+    bugScreens = bugScreenList
 )
