@@ -33,6 +33,9 @@ interface TestCaseDao {
     @Delete
     suspend fun delete(testCase: TestCase)
 
+    @Query("SELECT bugScreens FROM test_cases WHERE bugScreens != ''")
+    suspend fun allBugScreens(): List<String>
+
     @Query("DELETE FROM test_cases WHERE sectionId = :sectionId")
     suspend fun deleteBySection(sectionId: Long)
 
@@ -70,7 +73,15 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [TestCase::class, Section::class], version = 2, exportSchema = false)
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `test_cases` ADD COLUMN `hasBug` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `test_cases` ADD COLUMN `bugDescription` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `test_cases` ADD COLUMN `bugScreens` TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+@Database(entities = [TestCase::class, Section::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TestCaseDao
     abstract fun sections(): SectionDao
@@ -86,7 +97,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "testcases.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
