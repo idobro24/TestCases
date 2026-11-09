@@ -22,6 +22,7 @@ import androidx.navigation.navArgument
 import com.example.testcases.ui.CaseListScreen
 import com.example.testcases.ui.EditorScreen
 import com.example.testcases.ui.ImportScreen
+import com.example.testcases.ui.RunMode
 import com.example.testcases.ui.RunScreen
 import com.example.testcases.ui.SECTION_ALL
 import com.example.testcases.ui.SectionsScreen
@@ -86,16 +87,25 @@ class MainActivity : ComponentActivity() {
                                 onBack = { nav.popBackStack() },
                                 onOpen = { nav.navigate("edit/$it") },
                                 onCreate = { nav.navigate("edit/0?section=$sectionId") },
-                                onRun = { nav.navigate("run/$sectionId") }
+                                onRun = { mode -> nav.navigate("run/$sectionId?mode=${mode.name}") }
                             )
                         }
                         composable(
-                            route = "run/{id}",
-                            arguments = listOf(navArgument("id") { type = NavType.LongType })
+                            route = "run/{id}?mode={mode}",
+                            arguments = listOf(
+                                navArgument("id") { type = NavType.LongType },
+                                navArgument("mode") {
+                                    type = NavType.StringType
+                                    defaultValue = "ALL"
+                                }
+                            )
                         ) { entry ->
                             RunScreen(
                                 vm = vm,
                                 sectionId = entry.arguments?.getLong("id") ?: SECTION_ALL,
+                                mode = runCatching {
+                                    RunMode.valueOf(entry.arguments?.getString("mode") ?: "ALL")
+                                }.getOrDefault(RunMode.ALL),
                                 onBack = { nav.popBackStack() },
                                 onEdit = { nav.navigate("edit/$it") }
                             )
