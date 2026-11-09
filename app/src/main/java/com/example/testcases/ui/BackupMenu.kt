@@ -32,7 +32,11 @@ import com.example.testcases.data.BackupContents
 import com.example.testcases.data.BackupException
 import kotlinx.coroutines.launch
 
-private class PendingRestore(val uri: Uri, val contents: BackupContents)
+private class PendingRestore(
+    val uri: Uri,
+    val contents: BackupContents,
+    val current: Triple<Int, Int, Int>
+)
 
 /**
  * Меню «⋮» на главном экране: сохранить полную копию данных одним файлом
@@ -56,7 +60,7 @@ fun BackupMenu(vm: TestCaseViewModel) {
             scope.launch {
                 busy = true
                 try {
-                    pending = PendingRestore(uri, vm.readBackup(uri))
+                    pending = PendingRestore(uri, vm.readBackup(uri), vm.totalCounts())
                 } catch (e: BackupException) {
                     toast(e.message ?: "Не удалось прочитать файл.")
                 } catch (e: Exception) {
@@ -114,17 +118,20 @@ fun BackupMenu(vm: TestCaseViewModel) {
 
     pending?.let { p ->
         val c = p.contents
-        val currentCases = cases.orEmpty().size
+        val (curProjects, curSections, curCases) = p.current
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text("Восстановить из копии?") },
             text = {
                 Text(
-                    "В копии: ${c.sections.size} ${plural(c.sections.size, "раздел", "раздела", "разделов")}, " +
+                    "В копии: ${c.projects.size} ${plural(c.projects.size, "проект", "проекта", "проектов")}, " +
+                        "${c.sections.size} ${plural(c.sections.size, "раздел", "раздела", "разделов")}, " +
                         "${c.cases.size} ${plural(c.cases.size, "кейс", "кейса", "кейсов")}, " +
                         "скриншотов: ${c.screenCount}.\n\n" +
-                        "Текущие данные ($currentCases ${plural(currentCases, "кейс", "кейса", "кейсов")}, " +
-                        "разделов: ${sections.size}) будут заменены. Отменить это нельзя."
+                        "Сейчас в приложении: $curProjects ${plural(curProjects, "проект", "проекта", "проектов")}, " +
+                        "$curSections ${plural(curSections, "раздел", "раздела", "разделов")}, " +
+                        "$curCases ${plural(curCases, "кейс", "кейса", "кейсов")}. " +
+                        "Всё это, включая все проекты, будет заменено содержимым копии. Отменить это нельзя."
                 )
             },
             confirmButton = {
