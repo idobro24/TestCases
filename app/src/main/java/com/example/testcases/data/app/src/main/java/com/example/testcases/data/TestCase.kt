@@ -47,9 +47,11 @@ data class TestCase(
     /** Имена файлов скриншотов в папке приложения, разделитель — [STEP_SEP]. */
     val bugScreens: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** Порядковый номер для показа (TC-007). При удалении кейсов номера смыкаются без пропусков. */
+    val number: Int = 0
 ) {
-    val code: String get() = String.format(Locale.ROOT, "TC-%03d", id)
+    val code: String get() = String.format(Locale.ROOT, "TC-%03d", if (number > 0) number.toLong() else id)
 
     val stepList: List<String>
         get() = if (steps.isEmpty()) emptyList() else steps.split(STEP_SEP)
