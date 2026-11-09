@@ -37,12 +37,17 @@ import com.example.testcases.ui.theme.color
 fun RunScreen(
     vm: TestCaseViewModel,
     sectionId: Long,
+    mode: RunMode,
     onBack: () -> Unit,
     onEdit: (Long) -> Unit
 ) {
     val all by vm.all.collectAsStateWithLifecycle()
-    val queue = remember(all, sectionId) { all.orEmpty().inSection(sectionId) }
     var index by rememberSaveable { mutableStateOf(-1) }
+
+    // Очередь запоминается при старте. Иначе кейс «выпадал» бы из списка, как только ему поставили статус.
+    var runIds by rememberSaveable { mutableStateOf<List<Long>?>(null) }
+    val byId = all.orEmpty().associateBy { it.id }
+    val queue = runIds.orEmpty().mapNotNull { byId[it] }
 
     // Пока идёт прогон, экран не гаснет
     val view = LocalView.current
@@ -52,9 +57,20 @@ fun RunScreen(
     }
 
     LaunchedEffect(all != null) {
-        if (all != null && index < 0) {
-            val firstUnrun = queue.indexOfFirst { it.status == Status.NOT_RUN }
-            index = if (firstUnrun < 0) 0 else firstUnrun
+        val list = all
+        if (list != null && runIds == null) {
+            val inScope = list.inSection(sectionId)
+            val chosen = when (mode) {
+                RunMode.ALL -> inScope
+                RunMode.UNRUN -> inScope.filter { it.status == Status.NOT_RUN }
+                RunMode.FAILED -> inScope.filter { it.status == Status.FAILED }
+                RunMode.FAILED_BLOCKED -> inScope.filter {
+                    it.status == Status.FAILED || it.status == Status.BLOCKED
+                }
+            }
+            runIds = chosen.map { it.id }
+            val firstUnrun = chosen.indexOfFirst { it.status == Status.NOT_RUN }
+            index = if (mode == RunMode.ALL && firstUnrun >= 0) firstUnrun else 0
         }
     }
 
@@ -111,6 +127,10 @@ fun RunScreen(
                     queue = queue,
                     onRestart = { index = 0 },
                     onUnrun = { index = queue.indexOfFirst { it.status == Status.NOT_RUN }.coerceAtLeast(0) },
+                    onRetryFailed = {
+                        runIds = queue.filter { it.status == Status.FAILED }.map { it.id }
+                        index = 0
+                    },
                     onBack = onBack
                 )
                 else -> {
@@ -352,10 +372,12 @@ private fun RunSummary(
     queue: List<TestCase>,
     onRestart: () -> Unit,
     onUnrun: () -> Unit,
+    onRetryFailed: () -> Unit,
     onBack: () -> Unit
 ) {
     val order = listOf(Status.PASSED, Status.FAILED, Status.BLOCKED, Status.NOT_RUN)
     val unrun = queue.count { it.status == Status.NOT_RUN }
+    val failed = queue.count { it.status == Status.FAILED }
     val passed = queue.count { it.status == Status.PASSED }
 
     Column(
@@ -390,6 +412,13 @@ private fun RunSummary(
                 shape = RoundedCornerShape(14.dp)
             ) { Text("К непройденным ($unrun)") }
         }
+        if (failed > 0) {
+            Button(
+                onClick = onRetryFailed,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) { Text("Перепройти проваленные ($failed)") }
+        }
         OutlinedButton(
             onClick = onRestart,
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -398,3 +427,6 @@ private fun RunSummary(
         TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("К списку") }
     }
 }
+
+/** Какие кейсы проходить: все, только непройденные, только проваленные или проваленные и заблокированные. */
+enum class RunMode { ALL, UNRUN, FAILED, FAILED_BLOCKED }
