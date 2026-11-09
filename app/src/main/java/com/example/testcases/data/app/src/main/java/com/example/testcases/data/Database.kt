@@ -45,11 +45,14 @@ interface TestCaseDao {
 
 @Dao
 interface SectionDao {
-    @Query("SELECT * FROM sections ORDER BY id ASC")
+    @Query("SELECT * FROM sections ORDER BY sortOrder ASC, id ASC")
     fun observeAll(): Flow<List<Section>>
 
-    @Query("SELECT * FROM sections ORDER BY id ASC")
+    @Query("SELECT * FROM sections ORDER BY sortOrder ASC, id ASC")
     suspend fun getAll(): List<Section>
+
+    @Query("UPDATE sections SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: Long, sortOrder: Int)
 
     @Insert
     suspend fun insert(section: Section): Long
@@ -81,7 +84,15 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-@Database(entities = [TestCase::class, Section::class], version = 3, exportSchema = false)
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sections` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0")
+        // Сохраняем нынешний порядок: раньше разделы шли по номеру
+        db.execSQL("UPDATE `sections` SET `sortOrder` = `id`")
+    }
+}
+
+@Database(entities = [TestCase::class, Section::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TestCaseDao
     abstract fun sections(): SectionDao
@@ -97,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "testcases.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
