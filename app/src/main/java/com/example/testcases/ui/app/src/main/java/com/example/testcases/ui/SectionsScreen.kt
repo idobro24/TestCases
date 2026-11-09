@@ -1,6 +1,9 @@
 package com.example.testcases.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -64,6 +67,22 @@ fun SectionsScreen(
     var draggingId by remember { mutableStateOf<Long?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
 
+    // Режим выбора: отмечаем несколько разделов и удаляем их разом
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf<Set<Long>>(emptySet()) }
+    var showDeleteSelected by rememberSaveable { mutableStateOf(false) }
+
+    fun exitSelection() {
+        selectionMode = false
+        selected = emptySet()
+    }
+
+    fun toggle(id: Long) {
+        selected = if (id in selected) selected - id else selected + id
+    }
+
+    BackHandler(enabled = selectionMode) { exitSelection() }
+
     /** Когда перетаскиваемый раздел пересёк середину соседа — меняем их местами. */
     fun checkSwap() {
         val id = draggingId ?: return
@@ -125,13 +144,15 @@ fun SectionsScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showCreate = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("Новый раздел") }
-            )
+            if (!selectionMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { showCreate = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                    text = { Text("Новый раздел") }
+                )
+            }
         }
     ) { padding ->
         val list = all
@@ -151,14 +172,39 @@ fun SectionsScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item(key = "header") { HomeHeader(list, themeMode, vm::setThemeMode, onImport) }
+            item(key = "header") {
+                if (selectionMode) {
+                    SelectionHeader(
+                        count = selected.size,
+                        total = sections.size,
+                        onCancel = ::exitSelection,
+                        onSelectAll = {
+                            selected = if (selected.size == sections.size) {
+                                emptySet()
+                            } else {
+                                sections.map { it.id }.toSet()
+                            }
+                        },
+                        onDelete = { showDeleteSelected = true }
+                    )
+                } else {
+                    HomeHeader(
+                        cases = list,
+                        themeMode = themeMode,
+                        onThemeChange = vm::setThemeMode,
+                        onImport = onImport,
+                        canSelect = sections.isNotEmpty(),
+                        onSelect = { selectionMode = true }
+                    )
+                }
+            }
 
             if (list.isEmpty() && sections.isEmpty()) {
                 item(key = "empty") {
                     EmptyHome(onCreateSection = { showCreate = true }, onImport = onImport)
                 }
             } else {
-                item(key = "all") {
+                if (!selectionMode) item(key = "all") {
                     SectionCard(
                         title = "Все кейсы",
                         cases = list,
@@ -177,7 +223,7 @@ fun SectionsScreen(
                             Modifier.animateItem()
                         },
                         dragging = dragging,
-                        dragHandleModifier = Modifier.pointerInput(s.id) {
+                        dragHandleModifier = if (selectionMode) null else Modifier.pointerInput(s.id) {
                             detectDragGestures(
                                 onDragStart = {
                                     draggingId = s.id
@@ -193,11 +239,17 @@ fun SectionsScreen(
                                 }
                             )
                         },
-                        onClick = { onOpenSection(s.id) }
+                        selectionMode = selectionMode,
+                        selected = s.id in selected,
+                        onLongClick = {
+                            selectionMode = true
+                            selected = selected + s.id
+                        },
+                        onClick = { if (selectionMode) toggle(s.id) else onOpenSection(s.id) }
                     )
                 }
                 val loose = list.filter { it.sectionId == null }
-                if (loose.isNotEmpty()) {
+                if (loose.isNotEmpty() && !selectionMode) {
                     item(key = "none") {
                         SectionCard(
                             title = "Без раздела",
@@ -222,6 +274,53 @@ fun SectionsScreen(
             onDismiss = { showCreate = false }
         )
     }
+
+    if (showDeleteSelected) {
+        val targets = sections.filter { it.id in selected }
+        val casesCount = all.orEmpty().count { it.sectionId != null && it.sectionId in selected }
+        val names = targets.take(5).joinToString("\n") { "• ${it.name}" } +
+            if (targets.size > 5) "\nи ещё ${targets.size - 5}" else ""
+        val note = if (casesCount == 0) {
+            "В выбранных разделах нет кейсов."
+        } else {
+            "В них $casesCount ${plural(casesCount, "кейс", "кейса", "кейсов")}. " +
+                "Их можно оставить без раздела или удалить вместе с разделами."
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteSelected = false },
+            title = { Text("Удалить ${targets.size} ${plural(targets.size, "раздел", "раздела", "разделов")}?") },
+            text = { Text("$names\n\n$note") },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (casesCount > 0) {
+                        TextButton(onClick = {
+                            vm.deleteSections(selected, withCases = true)
+                            showDeleteSelected = false
+                            exitSelection()
+                        }) {
+                            Text("Удалить вместе с кейсами", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = {
+                            vm.deleteSections(selected, withCases = false)
+                            showDeleteSelected = false
+                            exitSelection()
+                        }) {
+                            Text("Удалить разделы, кейсы оставить")
+                        }
+                    } else {
+                        TextButton(onClick = {
+                            vm.deleteSections(selected, withCases = false)
+                            showDeleteSelected = false
+                            exitSelection()
+                        }) {
+                            Text("Удалить", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(onClick = { showDeleteSelected = false }) { Text("Отмена") }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -229,7 +328,9 @@ private fun HomeHeader(
     cases: List<TestCase>,
     themeMode: ThemeMode,
     onThemeChange: (ThemeMode) -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    canSelect: Boolean,
+    onSelect: () -> Unit
 ) {
     val passed = cases.count { it.status == Status.PASSED }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -248,6 +349,9 @@ private fun HomeHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            if (canSelect) {
+                TextButton(onClick = onSelect) { Text("Выбрать") }
+            }
             FilledTonalButton(onClick = onImport) {
                 Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -287,6 +391,37 @@ private fun ThemeMenu(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
     }
 }
 
+/** Шапка в режиме выбора: сколько отмечено, «выбрать все» и удаление. */
+@Composable
+private fun SelectionHeader(
+    count: Int,
+    total: Int,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onCancel) {
+            Icon(Icons.Rounded.Close, contentDescription = "Отменить выбор")
+        }
+        Text(
+            "Выбрано: $count",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onSelectAll) {
+            Text(if (count == total) "Снять все" else "Выбрать все")
+        }
+        IconButton(onClick = onDelete, enabled = count > 0) {
+            Icon(
+                Icons.Rounded.Delete,
+                contentDescription = "Удалить выбранные разделы",
+                tint = if (count > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
 @Composable
 private fun EmptyHome(onCreateSection: () -> Unit, onImport: () -> Unit) {
     Column(
@@ -308,6 +443,8 @@ private fun EmptyHome(onCreateSection: () -> Unit, onImport: () -> Unit) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun SectionCard(
     title: String,
     cases: List<TestCase>,
@@ -315,23 +452,31 @@ private fun SectionCard(
     modifier: Modifier = Modifier,
     dragging: Boolean = false,
     dragHandleModifier: Modifier? = null,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val passed = cases.count { it.status == Status.PASSED }
     Surface(
-        onClick = onClick,
         modifier = modifier,
         shadowElevation = if (dragging) 10.dp else 0.dp,
         shape = RoundedCornerShape(16.dp),
-        color = if (highlighted) {
+        color = if (highlighted || selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
             MaterialTheme.colorScheme.surface
         },
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        )
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -355,7 +500,9 @@ private fun SectionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (dragHandleModifier != null) {
+                if (selectionMode) {
+                    Checkbox(checked = selected, onCheckedChange = null)
+                } else if (dragHandleModifier != null) {
                     Box(
                         modifier = dragHandleModifier
                             .size(width = 36.dp, height = 40.dp)
@@ -369,11 +516,13 @@ private fun SectionCard(
                         )
                     }
                 }
-                Icon(
-                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (!selectionMode) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             if (cases.isNotEmpty()) StatusBar(cases, height = 6.dp)
         }
