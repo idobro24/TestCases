@@ -24,6 +24,10 @@ interface TestCaseDao {
     @Query("DELETE FROM test_cases")
     suspend fun deleteAll()
 
+    /** Ставит один статус сразу нескольким кейсам (status — имя значения Status). */
+    @Query("UPDATE test_cases SET status = :status, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun setStatus(ids: List<Long>, status: String, now: Long)
+
     @Query("SELECT * FROM test_cases WHERE id = :id")
     suspend fun getById(id: Long): TestCase?
 
