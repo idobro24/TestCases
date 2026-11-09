@@ -16,6 +16,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > app/debug.keystore
+            echo "Постоянный ключ подписи подключён"
+          else
+            echo "Секрет KEYSTORE_B64 не задан, будет временный ключ"
+          fi
       - name: Build debug APK
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
