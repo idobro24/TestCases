@@ -18,12 +18,22 @@ enum class Priority(val label: String) {
     CRITICAL("Критичный")
 }
 
+/** Проект: у каждого свои разделы, кейсы и своя нумерация. */
+@Entity(tableName = "projects")
+data class Project(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "sections")
 data class Section(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     /** Порядок на главном экране: меньше — выше. */
     val sortOrder: Int = 0,
+    /** Проект, которому принадлежит раздел. */
+    val projectId: Long = 1,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -49,7 +59,9 @@ data class TestCase(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     /** Порядковый номер для показа (TC-007). При удалении кейсов номера смыкаются без пропусков. */
-    val number: Int = 0
+    val number: Int = 0,
+    /** Проект, которому принадлежит кейс (нумерация идёт отдельно в каждом проекте). */
+    val projectId: Long = 1
 ) {
     val code: String get() = String.format(Locale.ROOT, "TC-%03d", if (number > 0) number.toLong() else id)
 
