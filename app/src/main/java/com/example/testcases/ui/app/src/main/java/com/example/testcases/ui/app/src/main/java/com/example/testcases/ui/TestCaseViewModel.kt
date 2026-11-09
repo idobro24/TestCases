@@ -231,6 +231,8 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                             expectedResult = p.expected,
                             priority = p.priority,
                             status = p.status,
+                            hasBug = p.hasBug,
+                            bugDescription = p.bugDescription,
                             sectionId = sectionId
                         )
                     )
