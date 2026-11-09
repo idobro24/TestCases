@@ -1,6 +1,9 @@
 package com.example.testcases.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -56,6 +59,12 @@ fun CaseListScreen(
     var showReset by rememberSaveable { mutableStateOf(false) }
     var showRunChoice by rememberSaveable { mutableStateOf(false) }
 
+    // Режим выбора: отмечаем несколько кейсов и применяем действие ко всем сразу
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf<Set<Long>>(emptySet()) }
+    var showMove by rememberSaveable { mutableStateOf(false) }
+    var showDeleteSelected by rememberSaveable { mutableStateOf(false) }
+
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -91,6 +100,64 @@ fun CaseListScreen(
             if (result == SnackbarResult.ActionPerformed) vm.restoreStatuses(previous)
         }
     }
+
+    fun exitSelection() {
+        selectionMode = false
+        selected = emptySet()
+    }
+
+    fun toggle(id: Long) {
+        selected = if (id in selected) selected - id else selected + id
+    }
+
+    fun selectedCases(): List<TestCase> = all.orEmpty().filter { it.id in selected }
+
+    fun undoable(message: String, undo: () -> Unit) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar(
+                message = message,
+                actionLabel = "Отменить",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) undo()
+        }
+    }
+
+    fun applyStatus(status: Status) {
+        val target = selectedCases()
+        val previous = target.associate { it.id to it.status }
+        vm.setStatuses(previous.keys, status)
+        exitSelection()
+        undoable("Статус «${status.label}»: ${target.size}") { vm.restoreStatuses(previous) }
+    }
+
+    fun applyBug(hasBug: Boolean) {
+        val target = selectedCases()
+        val previous = target.associate { it.id to it.hasBug }
+        vm.setBugFlag(previous.keys, hasBug)
+        exitSelection()
+        undoable(
+            if (hasBug) "Отмечено багом: ${target.size}" else "Отметка бага снята: ${target.size}"
+        ) { vm.restoreBugFlags(previous) }
+    }
+
+    fun applyMove(sectionId: Long?) {
+        val target = selectedCases()
+        val previous = target.associate { it.id to it.sectionId }
+        vm.moveCases(previous.keys, sectionId)
+        exitSelection()
+        undoable("Перемещено: ${target.size}") { vm.restoreSections(previous) }
+    }
+
+    fun applyDelete() {
+        val target = selectedCases()
+        vm.deleteCases(target)
+        exitSelection()
+        undoable("Удалено: ${target.size}") { vm.restoreCases(target) }
+    }
+
+    BackHandler(enabled = selectionMode) { exitSelection() }
 
     fun deleteWithUndo(tc: TestCase) {
         vm.delete(tc)
@@ -139,8 +206,32 @@ fun CaseListScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            if (selectionMode) {
+                BulkBar(
+                    enabled = selected.isNotEmpty(),
+                    onMove = { showMove = true },
+                    onStatus = ::applyStatus,
+                    onBug = ::applyBug,
+                    onDelete = { showDeleteSelected = true }
+                )
+            }
+        },
         topBar = {
-            TopAppBar(
+            if (selectionMode) {
+                SelectionTopBar(
+                    count = selected.size,
+                    allSelected = visible.isNotEmpty() && selected.size == visible.size,
+                    onCancel = ::exitSelection,
+                    onSelectAll = {
+                        selected = if (selected.size == visible.size) {
+                            emptySet()
+                        } else {
+                            visible.map { it.id }.toSet()
+                        }
+                    }
+                )
+            } else TopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -188,6 +279,14 @@ fun CaseListScreen(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
+                                text = { Text("Выбрать кейсы") },
+                                enabled = scoped.isNotEmpty(),
+                                onClick = {
+                                    menuOpen = false
+                                    selectionMode = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Сбросить статусы") },
                                 enabled = scoped.any { it.status != Status.NOT_RUN },
                                 onClick = {
@@ -220,7 +319,7 @@ fun CaseListScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            if (!selectionMode) ExtendedFloatingActionButton(
                 onClick = onCreate,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -259,25 +358,88 @@ fun CaseListScreen(
                 scoped.isEmpty() -> item(key = "empty") { EmptyState(onCreate) }
                 visible.isEmpty() -> item(key = "nothing") { NoResults() }
                 else -> items(visible, key = { it.id }) { tc ->
-                    SwipeActionBox(
-                        modifier = Modifier.animateItem(),
-                        onDelete = { deleteWithUndo(tc) },
-                        onCopy = { copyCase(tc) }
-                    ) {
+                    val cardSection = if (sectionId == SECTION_ALL) {
+                        tc.sectionId?.let { sectionNames[it] }
+                    } else {
+                        null
+                    }
+                    if (selectionMode) {
                         TestCaseCard(
                             tc = tc,
-                            sectionName = if (sectionId == SECTION_ALL) {
-                                tc.sectionId?.let { sectionNames[it] }
-                            } else {
-                                null
-                            },
-                            onClick = { onOpen(tc.id) },
-                            onStatusChange = { vm.setStatus(tc, it) }
+                            sectionName = cardSection,
+                            modifier = Modifier.animateItem(),
+                            selectionMode = true,
+                            selected = tc.id in selected,
+                            onClick = { toggle(tc.id) },
+                            onLongClick = { toggle(tc.id) },
+                            onStatusChange = {}
                         )
+                    } else {
+                        SwipeActionBox(
+                            modifier = Modifier.animateItem(),
+                            onDelete = { deleteWithUndo(tc) },
+                            onCopy = { copyCase(tc) }
+                        ) {
+                            TestCaseCard(
+                                tc = tc,
+                                sectionName = cardSection,
+                                onClick = { onOpen(tc.id) },
+                                onLongClick = {
+                                    selectionMode = true
+                                    selected = setOf(tc.id)
+                                },
+                                onStatusChange = { vm.setStatus(tc, it) }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showMove) {
+        AlertDialog(
+            onDismissRequest = { showMove = false },
+            title = { Text("Переместить в раздел") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    item(key = "none") {
+                        MoveRow("Без раздела") {
+                            showMove = false
+                            applyMove(null)
+                        }
+                    }
+                    items(sections, key = { it.id }) { s ->
+                        MoveRow(s.name) {
+                            showMove = false
+                            applyMove(s.id)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showMove = false }) { Text("Отмена") } }
+        )
+    }
+
+    if (showDeleteSelected) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSelected = false },
+            title = { Text("Удалить кейсы?") },
+            text = {
+                Text(
+                    "Будет удалено: ${selected.size} ${plural(selected.size, "кейс", "кейса", "кейсов")}. " +
+                        "Номера остальных кейсов сомкнутся. Удаление можно отменить в сообщении внизу."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteSelected = false
+                    applyDelete()
+                }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteSelected = false }) { Text("Отмена") } }
+        )
     }
 
     if (showRunChoice) {
@@ -563,20 +725,32 @@ private fun NoResults() {
 
 // ---------------------------------------------------------------- card
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TestCaseCard(
     tc: TestCase,
     sectionName: String?,
     onClick: () -> Unit,
-    onStatusChange: (Status) -> Unit
+    onStatusChange: (Status) -> Unit,
+    modifier: Modifier = Modifier,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     Surface(
-        onClick = onClick,
+        modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        )
     ) {
-        Row(Modifier.height(IntrinsicSize.Min)) {
+        Row(
+            Modifier
+                .height(IntrinsicSize.Min)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        ) {
             // Цветная полоса слева — статус виден даже при быстром скролле
             Box(
                 Modifier
@@ -632,10 +806,12 @@ private fun TestCaseCard(
                     modifier = Modifier.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    StatusPill(tc.status, onStatusChange)
+                    StatusPill(tc.status, onStatusChange, enabled = !selectionMode)
                     Spacer(Modifier.weight(1f))
                     val n = tc.stepList.size
-                    if (n > 0) {
+                    if (selectionMode) {
+                        Checkbox(checked = selected, onCheckedChange = null)
+                    } else if (n > 0) {
                         Text(
                             "$n ${plural(n, "шаг", "шага", "шагов")}",
                             style = MaterialTheme.typography.labelMedium,
@@ -690,7 +866,7 @@ internal fun PriorityTag(priority: Priority) {
 
 /** Нажмите на статус, чтобы быстро сменить его, не открывая кейс. */
 @Composable
-private fun StatusPill(status: Status, onSelect: (Status) -> Unit) {
+private fun StatusPill(status: Status, onSelect: (Status) -> Unit, enabled: Boolean = true) {
     var open by remember { mutableStateOf(false) }
     val color = status.color()
     Box {
@@ -698,7 +874,7 @@ private fun StatusPill(status: Status, onSelect: (Status) -> Unit) {
             modifier = Modifier
                 .clip(CircleShape)
                 .background(color.copy(alpha = 0.14f))
-                .clickable { open = true }
+                .clickable(enabled = enabled) { open = true }
                 .padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -796,4 +972,134 @@ private fun SwipeActionBox(
     ) {
         content()
     }
+}
+
+// ---------------------------------------------------------------- выбор нескольких кейсов
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    allSelected: Boolean,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit
+) {
+    TopAppBar(
+        title = { Text("Выбрано: $count") },
+        navigationIcon = {
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Rounded.Close, contentDescription = "Отменить выбор")
+            }
+        },
+        actions = {
+            TextButton(onClick = onSelectAll) { Text(if (allSelected) "Снять все" else "Выбрать все") }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+    )
+}
+
+/** Нижняя панель действий над отмеченными кейсами. */
+@Composable
+private fun BulkBar(
+    enabled: Boolean,
+    onMove: () -> Unit,
+    onStatus: (Status) -> Unit,
+    onBug: (Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    var statusMenu by remember { mutableStateOf(false) }
+    var bugMenu by remember { mutableStateOf(false) }
+
+    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            BulkButton(Icons.Rounded.Folder, "Переместить", enabled, onClick = onMove)
+
+            Box {
+                BulkButton(Icons.Rounded.CheckCircle, "Статус", enabled) { statusMenu = true }
+                DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                    Status.entries.forEach { s ->
+                        DropdownMenuItem(
+                            text = { Text(s.label) },
+                            leadingIcon = {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(s.color()))
+                            },
+                            onClick = {
+                                statusMenu = false
+                                onStatus(s)
+                            }
+                        )
+                    }
+                }
+            }
+
+            Box {
+                BulkButton(Icons.Rounded.BugReport, "Баг", enabled) { bugMenu = true }
+                DropdownMenu(expanded = bugMenu, onDismissRequest = { bugMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Отметить багом") },
+                        onClick = {
+                            bugMenu = false
+                            onBug(true)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Снять отметку бага") },
+                        onClick = {
+                            bugMenu = false
+                            onBug(false)
+                        }
+                    )
+                }
+            }
+
+            BulkButton(
+                Icons.Rounded.Delete,
+                "Удалить",
+                enabled,
+                tint = MaterialTheme.colorScheme.error,
+                onClick = onDelete
+            )
+        }
+    }
+}
+
+@Composable
+private fun BulkButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val color = if (enabled) tint else MaterialTheme.colorScheme.outline
+        Icon(icon, contentDescription = null, tint = color)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+    }
+}
+
+@Composable
+private fun MoveRow(text: String, onClick: () -> Unit) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyLarge,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp)
+    )
 }
