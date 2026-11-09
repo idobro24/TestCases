@@ -15,21 +15,28 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TestCaseDao {
-    @Query("SELECT * FROM test_cases ORDER BY number ASC, id ASC")
-    fun observeAll(): Flow<List<TestCase>>
+    @Query("SELECT * FROM test_cases WHERE projectId = :projectId ORDER BY number ASC, id ASC")
+    fun observeByProject(projectId: Long): Flow<List<TestCase>>
 
-    @Query("SELECT * FROM test_cases ORDER BY number ASC, id ASC")
+    @Query("SELECT * FROM test_cases WHERE projectId = :projectId ORDER BY number ASC, id ASC")
+    suspend fun getByProject(projectId: Long): List<TestCase>
+
+    /** Кейсы всех проектов — для резервной копии. */
+    @Query("SELECT * FROM test_cases ORDER BY projectId ASC, number ASC, id ASC")
     suspend fun getAll(): List<TestCase>
 
     @Query("DELETE FROM test_cases")
     suspend fun deleteAll()
 
-    @Query("SELECT COALESCE(MAX(number), 0) FROM test_cases")
-    suspend fun maxNumber(): Int
+    @Query("DELETE FROM test_cases WHERE projectId = :projectId")
+    suspend fun deleteByProject(projectId: Long)
 
-    /** Освобождает место под номер [from]: все номера от него и выше сдвигаются на единицу. */
-    @Query("UPDATE test_cases SET number = number + 1 WHERE number >= :from")
-    suspend fun shiftFrom(from: Int)
+    @Query("SELECT COALESCE(MAX(number), 0) FROM test_cases WHERE projectId = :projectId")
+    suspend fun maxNumber(projectId: Long): Int
+
+    /** Освобождает место под номер [from] в проекте: все номера от него и выше сдвигаются на единицу. */
+    @Query("UPDATE test_cases SET number = number + 1 WHERE projectId = :projectId AND number >= :from")
+    suspend fun shiftFrom(projectId: Long, from: Int)
 
     @Query("UPDATE test_cases SET number = :number WHERE id = :id")
     suspend fun setNumber(id: Long, number: Int)
@@ -71,14 +78,21 @@ interface TestCaseDao {
 
 @Dao
 interface SectionDao {
-    @Query("SELECT * FROM sections ORDER BY sortOrder ASC, id ASC")
-    fun observeAll(): Flow<List<Section>>
+    @Query("SELECT * FROM sections WHERE projectId = :projectId ORDER BY sortOrder ASC, id ASC")
+    fun observeByProject(projectId: Long): Flow<List<Section>>
 
-    @Query("SELECT * FROM sections ORDER BY sortOrder ASC, id ASC")
+    @Query("SELECT * FROM sections WHERE projectId = :projectId ORDER BY sortOrder ASC, id ASC")
+    suspend fun getByProject(projectId: Long): List<Section>
+
+    /** Разделы всех проектов — для резервной копии. */
+    @Query("SELECT * FROM sections ORDER BY projectId ASC, sortOrder ASC, id ASC")
     suspend fun getAll(): List<Section>
 
     @Query("DELETE FROM sections")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM sections WHERE projectId = :projectId")
+    suspend fun deleteByProject(projectId: Long)
 
     @Insert
     suspend fun insertAll(sections: List<Section>)
@@ -94,6 +108,30 @@ interface SectionDao {
 
     @Delete
     suspend fun delete(section: Section)
+}
+
+@Dao
+interface ProjectDao {
+    @Query("SELECT * FROM projects ORDER BY id ASC")
+    fun observeAll(): Flow<List<Project>>
+
+    @Query("SELECT * FROM projects ORDER BY id ASC")
+    suspend fun getAll(): List<Project>
+
+    @Query("DELETE FROM projects")
+    suspend fun deleteAll()
+
+    @Insert
+    suspend fun insert(project: Project): Long
+
+    @Insert
+    suspend fun insertAll(projects: List<Project>)
+
+    @Update
+    suspend fun update(project: Project)
+
+    @Delete
+    suspend fun delete(project: Project)
 }
 
 private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -135,10 +173,43 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
-@Database(entities = [TestCase::class, Section::class], version = 5, exportSchema = false)
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `projects` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL)"
+        )
+        // Всё, что было, переходит в первый проект
+        db.execSQL(
+            "INSERT INTO `projects` (`id`, `name`, `createdAt`) " +
+                "VALUES (1, 'Проект 1', ${System.currentTimeMillis()})"
+        )
+        db.execSQL("ALTER TABLE `sections` ADD COLUMN `projectId` INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE `test_cases` ADD COLUMN `projectId` INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
+/** При первом создании базы (чистая установка) сразу заводим первый проект. */
+private val SeedFirstProject = object : RoomDatabase.Callback() {
+    override fun onCreate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT INTO `projects` (`id`, `name`, `createdAt`) " +
+                "VALUES (1, 'Проект 1', ${System.currentTimeMillis()})"
+        )
+    }
+}
+
+@Database(
+    entities = [TestCase::class, Section::class, Project::class],
+    version = 6,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TestCaseDao
     abstract fun sections(): SectionDao
+    abstract fun projects(): ProjectDao
 
     companion object {
         @Volatile
@@ -151,7 +222,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "testcases.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                    )
+                    .addCallback(SeedFirstProject)
                     .build()
                     .also { instance = it }
             }
