@@ -48,6 +48,7 @@ fun CaseListScreen(
 
     var query by rememberSaveable { mutableStateOf("") }
     var statusFilter by rememberSaveable { mutableStateOf<Status?>(null) }
+    var bugOnly by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var shareMenuOpen by remember { mutableStateOf(false) }
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -64,9 +65,10 @@ fun CaseListScreen(
     }
     val sectionNames = remember(sections) { sections.associate { it.id to it.name } }
     val scoped = remember(all, sectionId) { all.orEmpty().inSection(sectionId) }
-    val visible = remember(scoped, query, statusFilter) {
+    val visible = remember(scoped, query, statusFilter, bugOnly) {
         scoped.filter { tc ->
             (statusFilter == null || tc.status == statusFilter) &&
+                (!bugOnly || tc.hasBug) &&
                 (query.isBlank() ||
                     tc.title.contains(query, ignoreCase = true) ||
                     tc.code.contains(query, ignoreCase = true) ||
@@ -96,10 +98,11 @@ fun CaseListScreen(
             SECTION_NONE -> "test-cases-no-section"
             else -> title.replace(Regex("[^\\p{L}\\p{N}]+"), "_").trim('_').ifEmpty { "section" }
         }
+        val suffix = if (bugOnly) "_bugs" else ""
         if (asExcel) {
-            CsvExport.shareXlsx(context, "$baseName.xlsx", scoped, sectionNames)
+            CsvExport.shareXlsx(context, "$baseName$suffix.xlsx", visible, sectionNames)
         } else {
-            CsvExport.share(context, "$baseName.csv", CsvExport.build(scoped, sectionNames))
+            CsvExport.share(context, "$baseName$suffix.csv", CsvExport.build(visible, sectionNames))
         }
     }
 
@@ -132,7 +135,7 @@ fun CaseListScreen(
                     Box {
                         IconButton(
                             onClick = { shareMenuOpen = true },
-                            enabled = scoped.isNotEmpty()
+                            enabled = visible.isNotEmpty()
                         ) {
                             Icon(Icons.Rounded.Share, contentDescription = "Поделиться кейсами")
                         }
@@ -140,6 +143,13 @@ fun CaseListScreen(
                             expanded = shareMenuOpen,
                             onDismissRequest = { shareMenuOpen = false }
                         ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text("Будет выгружено: ${visible.size} ${plural(visible.size, "кейс", "кейса", "кейсов")}")
+                                },
+                                enabled = false,
+                                onClick = {}
+                            )
                             DropdownMenuItem(
                                 text = { Text("Excel (.xlsx)") },
                                 onClick = {
@@ -212,7 +222,7 @@ fun CaseListScreen(
         ) {
             if (scoped.isNotEmpty()) {
                 item(key = "progress") { Progress(scoped, onRun) }
-                item(key = "filters") { FilterRow(scoped, statusFilter) { statusFilter = it } }
+                item(key = "filters") { FilterRow(scoped, statusFilter, { statusFilter = it }, bugOnly) { bugOnly = !bugOnly } }
                 item(key = "search") { SearchField(query) { query = it } }
             }
 
@@ -355,7 +365,13 @@ internal fun StatusBar(cases: List<TestCase>, height: androidx.compose.ui.unit.D
 }
 
 @Composable
-private fun FilterRow(cases: List<TestCase>, selected: Status?, onSelect: (Status?) -> Unit) {
+private fun FilterRow(
+    cases: List<TestCase>,
+    selected: Status?,
+    onSelect: (Status?) -> Unit,
+    bugOnly: Boolean,
+    onBugToggle: () -> Unit
+) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -373,6 +389,22 @@ private fun FilterRow(cases: List<TestCase>, selected: Status?, onSelect: (Statu
                 label = { Text("${s.label} $n") },
                 leadingIcon = {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(s.color()))
+                }
+            )
+        }
+        val bugs = cases.count { it.hasBug }
+        if (bugs > 0 || bugOnly) {
+            FilterChip(
+                selected = bugOnly,
+                onClick = onBugToggle,
+                label = { Text("С багом $bugs") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             )
         }
@@ -434,7 +466,7 @@ private fun NoResults() {
     ) {
         Text("Ничего не найдено", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Измените запрос или сбросьте фильтр по статусу.",
+            "Измените запрос или сбросьте фильтры.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
