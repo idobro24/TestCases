@@ -131,7 +131,18 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     fun addSection(name: String) {
         val clean = name.trim()
         if (clean.isEmpty()) return
-        viewModelScope.launch { sectionDao.insert(Section(name = clean)) }
+        // Новый раздел встаёт в конец списка
+        val order = (sections.value.maxOfOrNull { it.sortOrder } ?: 0) + 1
+        viewModelScope.launch { sectionDao.insert(Section(name = clean, sortOrder = order)) }
+    }
+
+    /** Сохраняет новый порядок разделов: [ids] — id разделов сверху вниз. */
+    fun reorderSections(ids: List<Long>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                ids.forEachIndexed { i, id -> sectionDao.setSortOrder(id, i + 1) }
+            }
+        }
     }
 
     fun renameSection(section: Section, name: String) {
@@ -191,7 +202,9 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             db.withTransaction {
                 val byName = HashMap<String, Long>()
-                for (s in sectionDao.getAll()) byName[s.name.trim().lowercase()] = s.id
+                val existingSections = sectionDao.getAll()
+                for (s in existingSections) byName[s.name.trim().lowercase()] = s.id
+                var nextOrder = (existingSections.maxOfOrNull { it.sortOrder } ?: 0) + 1
 
                 val cases = ArrayList<TestCase>()
                 for (p in parsed) {
@@ -204,7 +217,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                         if (existing != null) {
                             existing
                         } else {
-                            val newId = sectionDao.insert(Section(name = name))
+                            val newId = sectionDao.insert(Section(name = name, sortOrder = nextOrder++))
                             byName[key] = newId
                             newId
                         }
