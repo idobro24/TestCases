@@ -17,6 +17,21 @@ android {
         versionName = "1.0"
     }
 
+    // Постоянный ключ подписи: тогда каждая новая сборка ставится поверх старой, без удаления.
+    // Файл debug.keystore собирается из секрета KEYSTORE_B64 (см. .github/workflows/build-apk.yml).
+    // Если файла нет, берётся обычный временный ключ.
+    signingConfigs {
+        getByName("debug") {
+            val keystore = file("debug.keystore")
+            if (keystore.exists()) {
+                storeFile = keystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
