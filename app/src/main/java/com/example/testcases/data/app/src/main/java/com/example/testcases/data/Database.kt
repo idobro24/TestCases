@@ -34,6 +34,12 @@ interface TestCaseDao {
     @Query("UPDATE test_cases SET number = :number WHERE id = :id")
     suspend fun setNumber(id: Long, number: Int)
 
+    @Query("UPDATE test_cases SET hasBug = :hasBug, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun setBug(ids: List<Long>, hasBug: Boolean, now: Long)
+
+    @Query("UPDATE test_cases SET sectionId = :sectionId, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun setSection(ids: List<Long>, sectionId: Long?, now: Long)
+
     /** Ставит один статус сразу нескольким кейсам (status — имя значения Status). */
     @Query("UPDATE test_cases SET status = :status, updatedAt = :now WHERE id IN (:ids)")
     suspend fun setStatus(ids: List<Long>, status: String, now: Long)
