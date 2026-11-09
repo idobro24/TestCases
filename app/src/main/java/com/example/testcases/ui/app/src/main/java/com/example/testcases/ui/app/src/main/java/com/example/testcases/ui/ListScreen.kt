@@ -41,7 +41,7 @@ fun CaseListScreen(
     onBack: () -> Unit,
     onOpen: (Long) -> Unit,
     onCreate: () -> Unit,
-    onRun: () -> Unit
+    onRun: (RunMode) -> Unit
 ) {
     val all by vm.all.collectAsStateWithLifecycle()
     val sections by vm.sections.collectAsStateWithLifecycle()
@@ -54,6 +54,7 @@ fun CaseListScreen(
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
     var showReset by rememberSaveable { mutableStateOf(false) }
+    var showRunChoice by rememberSaveable { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -244,7 +245,12 @@ fun CaseListScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (scoped.isNotEmpty()) {
-                item(key = "progress") { Progress(scoped, onRun) }
+                item(key = "progress") {
+                    Progress(scoped) {
+                        // Выбор нужен, только если часть кейсов уже пройдена; иначе сразу начинаем
+                        if (scoped.all { it.status == Status.NOT_RUN }) onRun(RunMode.ALL) else showRunChoice = true
+                    }
+                }
                 item(key = "filters") { FilterRow(scoped, statusFilter, { statusFilter = it }, bugOnly) { bugOnly = !bugOnly } }
                 item(key = "search") { SearchField(query) { query = it } }
             }
@@ -272,6 +278,40 @@ fun CaseListScreen(
                 }
             }
         }
+    }
+
+    if (showRunChoice) {
+        val unrunCount = scoped.count { it.status == Status.NOT_RUN }
+        val failedCount = scoped.count { it.status == Status.FAILED }
+        val blockedCount = scoped.count { it.status == Status.BLOCKED }
+        fun start(mode: RunMode) {
+            showRunChoice = false
+            onRun(mode)
+        }
+        AlertDialog(
+            onDismissRequest = { showRunChoice = false },
+            title = { Text("Что проходить?") },
+            text = { Text(title) },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { start(RunMode.ALL) }) {
+                        Text("Все кейсы (${scoped.size})")
+                    }
+                    TextButton(enabled = unrunCount > 0, onClick = { start(RunMode.UNRUN) }) {
+                        Text("Только непройденные ($unrunCount)")
+                    }
+                    TextButton(enabled = failedCount > 0, onClick = { start(RunMode.FAILED) }) {
+                        Text("Только проваленные ($failedCount)")
+                    }
+                    if (blockedCount > 0) {
+                        TextButton(onClick = { start(RunMode.FAILED_BLOCKED) }) {
+                            Text("Проваленные и заблокированные (${failedCount + blockedCount})")
+                        }
+                    }
+                    TextButton(onClick = { showRunChoice = false }) { Text("Отмена") }
+                }
+            }
+        )
     }
 
     if (showReset) {
