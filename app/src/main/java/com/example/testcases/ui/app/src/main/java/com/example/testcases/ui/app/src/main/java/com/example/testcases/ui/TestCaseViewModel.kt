@@ -139,6 +139,72 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------------------------------------------------------- действия над несколькими кейсами
+
+    fun setStatuses(ids: Collection<Long>, status: Status) {
+        viewModelScope.launch { db.withTransaction { setStatusInChunks(ids, status) } }
+    }
+
+    fun setBugFlag(ids: Collection<Long>, hasBug: Boolean) {
+        viewModelScope.launch { db.withTransaction { setBugInChunks(ids, hasBug) } }
+    }
+
+    fun restoreBugFlags(previous: Map<Long, Boolean>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                previous.entries
+                    .groupBy({ it.value }, { it.key })
+                    .forEach { (flag, ids) -> setBugInChunks(ids, flag) }
+            }
+        }
+    }
+
+    /** Переносит кейсы в раздел [sectionId] (null — «Без раздела»). */
+    fun moveCases(ids: Collection<Long>, sectionId: Long?) {
+        viewModelScope.launch { db.withTransaction { setSectionInChunks(ids, sectionId) } }
+    }
+
+    fun restoreSections(previous: Map<Long, Long?>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                previous.entries
+                    .groupBy({ it.value }, { it.key })
+                    .forEach { (sectionId, ids) -> setSectionInChunks(ids, sectionId) }
+            }
+        }
+    }
+
+    fun deleteCases(cases: List<TestCase>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                cases.forEach { dao.delete(it) }
+                renumber()
+            }
+        }
+    }
+
+    /** Отмена удаления нескольких кейсов: возвращаем по порядку номеров, чтобы каждый встал на своё место. */
+    fun restoreCases(cases: List<TestCase>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                for (c in cases.sortedBy { it.number }) {
+                    if (c.number > 0) dao.shiftFrom(c.number)
+                    dao.insert(c)
+                }
+            }
+        }
+    }
+
+    private suspend fun setBugInChunks(ids: Collection<Long>, hasBug: Boolean) {
+        val now = System.currentTimeMillis()
+        ids.chunked(500).forEach { dao.setBug(it, hasBug, now) }
+    }
+
+    private suspend fun setSectionInChunks(ids: Collection<Long>, sectionId: Long?) {
+        val now = System.currentTimeMillis()
+        ids.chunked(500).forEach { dao.setSection(it, sectionId, now) }
+    }
+
     /** Возвращает кейсам статус «Не запущен» — для нового прогона. */
     fun resetStatuses(ids: Collection<Long>) {
         viewModelScope.launch {
