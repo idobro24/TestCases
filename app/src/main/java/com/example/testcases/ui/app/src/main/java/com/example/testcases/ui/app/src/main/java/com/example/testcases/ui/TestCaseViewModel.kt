@@ -14,15 +14,20 @@ import com.example.testcases.data.BugFiles
 import com.example.testcases.data.CsvImport
 import com.example.testcases.data.ImportResult
 import com.example.testcases.data.ParsedCase
+import com.example.testcases.data.Project
 import com.example.testcases.data.Section
 import com.example.testcases.data.Status
 import com.example.testcases.data.TestCase
 import com.example.testcases.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,6 +50,8 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.get(app)
     private val dao = db.dao()
     private val sectionDao = db.sections()
+    private val projectDao = db.projects()
+    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     init {
         // При запуске убираем скриншоты, на которые больше не ссылается ни один кейс
@@ -58,16 +65,81 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** null — данные ещё загружаются. */
-    val all: StateFlow<List<TestCase>?> = dao.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    // ---------------------------------------------------------- проекты
 
-    val sections: StateFlow<List<Section>> = sectionDao.observeAll()
+    private val _currentProjectId = MutableStateFlow(prefs.getLong("project", 1L))
+
+    /** Проект, с которым работает приложение сейчас. */
+    val currentProjectId: StateFlow<Long> = _currentProjectId.asStateFlow()
+
+    val projects: StateFlow<List<Project>> = projectDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // ---------------------------------------------------------- тема
+    /** Кейсы текущего проекта. null — данные ещё загружаются. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val all: StateFlow<List<TestCase>?> = _currentProjectId
+        .flatMapLatest { pid ->
+            dao.observeByProject(pid)
+                .map<List<TestCase>, List<TestCase>?> { it }
+                .onStart { emit(null) }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    /** Разделы текущего проекта. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val sections: StateFlow<List<Section>> = _currentProjectId
+        .flatMapLatest { pid -> sectionDao.observeByProject(pid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    init {
+        // Всегда должен быть хотя бы один проект, а выбранный — существовать
+        viewModelScope.launch {
+            if (projectDao.getAll().isEmpty()) projectDao.insert(Project(id = 1, name = "Проект 1"))
+            projects.collect { list ->
+                if (list.isNotEmpty() && list.none { it.id == _currentProjectId.value }) {
+                    selectProject(list.first().id)
+                }
+            }
+        }
+    }
+
+    fun selectProject(id: Long) {
+        _currentProjectId.value = id
+        prefs.edit().putLong("project", id).apply()
+    }
+
+    fun addProject(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val id = projectDao.insert(Project(name = clean))
+            selectProject(id)
+        }
+    }
+
+    fun renameProject(project: Project, name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch { projectDao.update(project.copy(name = clean)) }
+    }
+
+    /** Удаляет проект со всеми его разделами и кейсами. Последний проект удалить нельзя. */
+    fun deleteProject(project: Project) {
+        viewModelScope.launch {
+            val list = projectDao.getAll()
+            if (list.size <= 1) return@launch
+            db.withTransaction {
+                dao.deleteByProject(project.id)
+                sectionDao.deleteByProject(project.id)
+                projectDao.delete(project)
+            }
+            if (_currentProjectId.value == project.id) {
+                selectProject(list.first { it.id != project.id }.id)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------- тема
 
     private val _themeMode = MutableStateFlow(
         runCatching { ThemeMode.valueOf(prefs.getString("theme", null) ?: "") }
@@ -87,9 +159,10 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     fun save(testCase: TestCase, onDone: () -> Unit) {
         viewModelScope.launch {
             if (testCase.id == 0L) {
+                val pid = _currentProjectId.value
                 db.withTransaction {
-                    // Новый кейс получает следующий номер после последнего
-                    dao.insert(testCase.copy(number = dao.maxNumber() + 1))
+                    // Новый кейс попадает в текущий проект и получает следующий номер после последнего
+                    dao.insert(testCase.copy(projectId = pid, number = dao.maxNumber(pid) + 1))
                 }
             } else {
                 dao.update(testCase.copy(updatedAt = System.currentTimeMillis()))
@@ -102,7 +175,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             db.withTransaction {
                 dao.delete(testCase)
-                renumber()
+                renumber(testCase.projectId)
             }
         }
     }
@@ -111,7 +184,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     fun restore(testCase: TestCase) {
         viewModelScope.launch {
             db.withTransaction {
-                if (testCase.number > 0) dao.shiftFrom(testCase.number)
+                if (testCase.number > 0) dao.shiftFrom(testCase.projectId, testCase.number)
                 dao.insert(testCase)
             }
         }
@@ -132,7 +205,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                 updatedAt = now
             )
             val saved = db.withTransaction {
-                val numbered = draft.copy(number = dao.maxNumber() + 1)
+                val numbered = draft.copy(number = dao.maxNumber(draft.projectId) + 1)
                 numbered.copy(id = dao.insert(numbered))
             }
             onDone(saved)
@@ -178,7 +251,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             db.withTransaction {
                 cases.forEach { dao.delete(it) }
-                renumber()
+                cases.map { it.projectId }.toSet().forEach { renumber(it) }
             }
         }
     }
@@ -188,7 +261,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             db.withTransaction {
                 for (c in cases.sortedBy { it.number }) {
-                    if (c.number > 0) dao.shiftFrom(c.number)
+                    if (c.number > 0) dao.shiftFrom(c.projectId, c.number)
                     dao.insert(c)
                 }
             }
@@ -224,8 +297,8 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Смыкает номера кейсов без пропусков: 1, 2, 3… в прежнем порядке. */
-    private suspend fun renumber() {
-        dao.getAll().forEachIndexed { index, c ->
+    private suspend fun renumber(projectId: Long) {
+        dao.getByProject(projectId).forEachIndexed { index, c ->
             if (c.number != index + 1) dao.setNumber(c.id, index + 1)
         }
     }
@@ -244,34 +317,44 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------- резервная копия
 
-    suspend fun createBackupFile(): File {
-        val allSections = sectionDao.getAll()
-        val allCases = dao.getAll()
-        return Backup.write(getApplication<Application>(), allSections, allCases)
-    }
+    suspend fun createBackupFile(): File =
+        Backup.write(getApplication<Application>(), projectDao.getAll(), sectionDao.getAll(), dao.getAll())
 
     suspend fun readBackup(uri: Uri): BackupContents = Backup.read(getApplication<Application>(), uri)
 
-    /** Заменяет все данные содержимым копии: скриншоты, разделы и кейсы с прежними номерами. */
+    /** Заменяет все данные (все проекты) содержимым копии: скриншоты, проекты, разделы и кейсы с прежними номерами. */
     fun restoreBackup(uri: Uri, contents: BackupContents, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
             val ok = try {
                 Backup.extractScreens(getApplication<Application>(), uri)
-                val sectionIds = contents.sections.map { it.id }.toSet()
-                val restored = contents.cases.map { c ->
-                    val sid = c.sectionId
-                    if (sid != null && sid !in sectionIds) c.copy(sectionId = null) else c
+
+                val projectIds = contents.projects.map { it.id }.toSet()
+                val fallback = contents.projects.first().id
+                val restoredSections = contents.sections.map { sec ->
+                    if (sec.projectId in projectIds) sec else sec.copy(projectId = fallback)
                 }
-                // Копии, сделанные до появления нумерации, номеров не содержат: нумеруем по порядку создания
-                val numbered = if (restored.any { it.number <= 0 } || restored.map { it.number }.toSet().size != restored.size) {
-                    restored.sortedBy { it.id }.mapIndexed { i, c -> c.copy(number = i + 1) }
-                } else {
-                    restored
+                val sectionProject = restoredSections.associate { it.id to it.projectId }
+                val restored = contents.cases.map { c ->
+                    val pid = if (c.projectId in projectIds) c.projectId else fallback
+                    val sid = c.sectionId
+                    // Раздел должен существовать и относиться к тому же проекту, иначе кейс остаётся без раздела
+                    val sectionOk = sid != null && sectionProject[sid] == pid
+                    c.copy(projectId = pid, sectionId = if (sectionOk) sid else null)
+                }
+                // Номера нужны подряд в каждом проекте; в старых копиях их нет, тогда нумеруем по порядку создания
+                val numbered = restored.groupBy { it.projectId }.flatMap { (_, list) ->
+                    if (list.any { it.number <= 0 } || list.map { it.number }.toSet().size != list.size) {
+                        list.sortedBy { it.id }.mapIndexed { i, c -> c.copy(number = i + 1) }
+                    } else {
+                        list
+                    }
                 }
                 db.withTransaction {
                     dao.deleteAll()
                     sectionDao.deleteAll()
-                    sectionDao.insertAll(contents.sections)
+                    projectDao.deleteAll()
+                    projectDao.insertAll(contents.projects)
+                    sectionDao.insertAll(restoredSections)
                     dao.insertAll(numbered)
                 }
                 true
@@ -289,7 +372,8 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         if (clean.isEmpty()) return
         // Новый раздел встаёт в конец списка
         val order = (sections.value.maxOfOrNull { it.sortOrder } ?: 0) + 1
-        viewModelScope.launch { sectionDao.insert(Section(name = clean, sortOrder = order)) }
+        val pid = _currentProjectId.value
+        viewModelScope.launch { sectionDao.insert(Section(name = clean, sortOrder = order, projectId = pid)) }
     }
 
     /** Сохраняет новый порядок разделов: [ids] — id разделов сверху вниз. */
@@ -320,7 +404,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     sectionDao.delete(s)
                 }
-                if (withCases) renumber()
+                if (withCases) renumber(_currentProjectId.value)
             }
         }
     }
@@ -334,7 +418,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     dao.detachFromSection(section.id)
                 }
                 sectionDao.delete(section)
-                if (withCases) renumber()
+                if (withCases) renumber(_currentProjectId.value)
             }
         }
     }
@@ -375,9 +459,10 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun importCases(parsed: List<ParsedCase>, defaultSectionId: Long?, onDone: (Int) -> Unit) {
         viewModelScope.launch {
+            val pid = _currentProjectId.value
             db.withTransaction {
                 val byName = HashMap<String, Long>()
-                val existingSections = sectionDao.getAll()
+                val existingSections = sectionDao.getByProject(pid)
                 for (s in existingSections) byName[s.name.trim().lowercase()] = s.id
                 var nextOrder = (existingSections.maxOfOrNull { it.sortOrder } ?: 0) + 1
 
@@ -392,7 +477,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                         if (existing != null) {
                             existing
                         } else {
-                            val newId = sectionDao.insert(Section(name = name, sortOrder = nextOrder++))
+                            val newId = sectionDao.insert(Section(name = name, sortOrder = nextOrder++, projectId = pid))
                             byName[key] = newId
                             newId
                         }
@@ -408,11 +493,12 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                             status = p.status,
                             hasBug = p.hasBug,
                             bugDescription = p.bugDescription,
-                            sectionId = sectionId
+                            sectionId = sectionId,
+                            projectId = pid
                         )
                     )
                 }
-                val start = dao.maxNumber() + 1
+                val start = dao.maxNumber(pid) + 1
                 dao.insertAll(cases.mapIndexed { i, c -> c.copy(number = start + i) })
             }
             onDone(parsed.size)
