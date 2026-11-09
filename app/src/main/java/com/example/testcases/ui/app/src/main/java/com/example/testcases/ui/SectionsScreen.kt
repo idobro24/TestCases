@@ -39,6 +39,7 @@ import com.example.testcases.ui.theme.LocalDarkTheme
 import com.example.testcases.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 fun SectionsScreen(
@@ -71,10 +72,27 @@ fun SectionsScreen(
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelected by rememberSaveable { mutableStateOf(false) }
+    var showResetSelected by rememberSaveable { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     fun exitSelection() {
         selectionMode = false
         selected = emptySet()
+    }
+
+    fun resetWithUndo(list: List<TestCase>) {
+        val previous = list.associate { it.id to it.status }
+        vm.resetStatuses(previous.keys)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar(
+                message = "Статусы сброшены: ${previous.size}",
+                actionLabel = "Отменить",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.restoreStatuses(previous)
+        }
     }
 
     fun toggle(id: Long) {
@@ -143,6 +161,7 @@ fun SectionsScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             if (!selectionMode) {
                 ExtendedFloatingActionButton(
@@ -185,6 +204,7 @@ fun SectionsScreen(
                                 sections.map { it.id }.toSet()
                             }
                         },
+                        onReset = { showResetSelected = true },
                         onDelete = { showDeleteSelected = true }
                     )
                 } else {
@@ -273,6 +293,33 @@ fun SectionsScreen(
                 showCreate = false
             },
             onDismiss = { showCreate = false }
+        )
+    }
+
+    if (showResetSelected) {
+        val toReset = all.orEmpty().filter {
+            it.sectionId != null && it.sectionId in selected && it.status != Status.NOT_RUN
+        }
+        AlertDialog(
+            onDismissRequest = { showResetSelected = false },
+            title = { Text("Сбросить статусы?") },
+            text = {
+                Text(
+                    "Выбрано разделов: ${selected.size}. Кейсов с проставленным статусом: ${toReset.size}. " +
+                        "Все они вернутся в «Не запущен». Отметки багов не изменятся."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = toReset.isNotEmpty(),
+                    onClick = {
+                        showResetSelected = false
+                        resetWithUndo(toReset)
+                        exitSelection()
+                    }
+                ) { Text("Сбросить") }
+            },
+            dismissButton = { TextButton(onClick = { showResetSelected = false }) { Text("Отмена") } }
         )
     }
 
@@ -401,6 +448,7 @@ private fun SelectionHeader(
     total: Int,
     onCancel: () -> Unit,
     onSelectAll: () -> Unit,
+    onReset: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -414,6 +462,9 @@ private fun SelectionHeader(
         )
         TextButton(onClick = onSelectAll) {
             Text(if (count == total) "Снять все" else "Выбрать все")
+        }
+        IconButton(onClick = onReset, enabled = count > 0) {
+            Icon(Icons.Rounded.Refresh, contentDescription = "Сбросить статусы выбранных разделов")
         }
         IconButton(onClick = onDelete, enabled = count > 0) {
             Icon(
