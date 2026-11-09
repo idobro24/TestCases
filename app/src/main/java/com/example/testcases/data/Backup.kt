@@ -24,6 +24,7 @@ class BackupException(message: String) : Exception(message)
 
 /** Что лежит в копии (скриншоты считаются, но не загружаются в память). */
 class BackupContents(
+    val projects: List<Project>,
     val sections: List<Section>,
     val cases: List<TestCase>,
     val screenCount: Int
@@ -36,13 +37,18 @@ class BackupContents(
 object Backup {
 
     private const val APP_ID = "testcases"
-    private const val FORMAT = 1
+    private const val FORMAT = 2
     private const val DATA = "data.json"
     private const val SCREENS = "screens/"
 
     // ------------------------------------------------------------------ запись
 
-    suspend fun write(context: Context, sections: List<Section>, cases: List<TestCase>): File =
+    suspend fun write(
+        context: Context,
+        projects: List<Project>,
+        sections: List<Section>,
+        cases: List<TestCase>
+    ): File =
         withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
@@ -52,6 +58,7 @@ object Backup {
                 put("app", APP_ID)
                 put("format", FORMAT)
                 put("exportedAt", System.currentTimeMillis())
+                put("projects", JSONArray().also { arr -> projects.forEach { arr.put(projectToJson(it)) } })
                 put("sections", JSONArray().also { arr -> sections.forEach { arr.put(sectionToJson(it)) } })
                 put("cases", JSONArray().also { arr -> cases.forEach { arr.put(caseToJson(it)) } })
             }
@@ -128,9 +135,12 @@ object Backup {
         }
 
         try {
+            // Копии старого формата без проектов целиком попадают в «Проект 1»
+            val projects = objects(root.optJSONArray("projects")).map { projectFromJson(it) }
+                .ifEmpty { listOf(Project(id = 1, name = "Проект 1")) }
             val sections = objects(root.optJSONArray("sections")).map { sectionFromJson(it) }
             val cases = objects(root.optJSONArray("cases")).map { caseFromJson(it) }
-            BackupContents(sections, cases, screens)
+            BackupContents(projects, sections, cases, screens)
         } catch (e: Exception) {
             throw BackupException("Файл копии повреждён.")
         }
@@ -162,10 +172,23 @@ object Backup {
     private fun strings(arr: JSONArray?): List<String> =
         if (arr == null) emptyList() else (0 until arr.length()).map { arr.getString(it) }
 
+    private fun projectToJson(p: Project) = JSONObject().apply {
+        put("id", p.id)
+        put("name", p.name)
+        put("createdAt", p.createdAt)
+    }
+
+    private fun projectFromJson(o: JSONObject) = Project(
+        id = o.getLong("id"),
+        name = o.optString("name", "Проект"),
+        createdAt = o.optLong("createdAt", System.currentTimeMillis())
+    )
+
     private fun sectionToJson(s: Section) = JSONObject().apply {
         put("id", s.id)
         put("name", s.name)
         put("sortOrder", s.sortOrder)
+        put("projectId", s.projectId)
         put("createdAt", s.createdAt)
     }
 
@@ -173,6 +196,7 @@ object Backup {
         id = o.getLong("id"),
         name = o.optString("name", ""),
         sortOrder = o.optInt("sortOrder", 0),
+        projectId = o.optLong("projectId", 1),
         createdAt = o.optLong("createdAt", System.currentTimeMillis())
     )
 
@@ -192,6 +216,7 @@ object Backup {
         put("createdAt", c.createdAt)
         put("updatedAt", c.updatedAt)
         put("number", c.number)
+        put("projectId", c.projectId)
     }
 
     private fun caseFromJson(o: JSONObject): TestCase {
@@ -211,7 +236,8 @@ object Backup {
             bugScreens = strings(o.optJSONArray("bugScreens")).joinToString(TestCase.STEP_SEP),
             createdAt = o.optLong("createdAt", now),
             updatedAt = o.optLong("updatedAt", now),
-            number = o.optInt("number", 0)
+            number = o.optInt("number", 0),
+            projectId = o.optLong("projectId", 1)
         )
     }
 }
