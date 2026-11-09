@@ -18,6 +18,12 @@ interface TestCaseDao {
     @Query("SELECT * FROM test_cases ORDER BY id ASC")
     fun observeAll(): Flow<List<TestCase>>
 
+    @Query("SELECT * FROM test_cases ORDER BY id ASC")
+    suspend fun getAll(): List<TestCase>
+
+    @Query("DELETE FROM test_cases")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM test_cases WHERE id = :id")
     suspend fun getById(id: Long): TestCase?
 
@@ -50,6 +56,12 @@ interface SectionDao {
 
     @Query("SELECT * FROM sections ORDER BY sortOrder ASC, id ASC")
     suspend fun getAll(): List<Section>
+
+    @Query("DELETE FROM sections")
+    suspend fun deleteAll()
+
+    @Insert
+    suspend fun insertAll(sections: List<Section>)
 
     @Query("UPDATE sections SET sortOrder = :sortOrder WHERE id = :id")
     suspend fun setSortOrder(id: Long, sortOrder: Int)
