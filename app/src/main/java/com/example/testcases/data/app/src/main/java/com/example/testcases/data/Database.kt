@@ -15,14 +15,24 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TestCaseDao {
-    @Query("SELECT * FROM test_cases ORDER BY id ASC")
+    @Query("SELECT * FROM test_cases ORDER BY number ASC, id ASC")
     fun observeAll(): Flow<List<TestCase>>
 
-    @Query("SELECT * FROM test_cases ORDER BY id ASC")
+    @Query("SELECT * FROM test_cases ORDER BY number ASC, id ASC")
     suspend fun getAll(): List<TestCase>
 
     @Query("DELETE FROM test_cases")
     suspend fun deleteAll()
+
+    @Query("SELECT COALESCE(MAX(number), 0) FROM test_cases")
+    suspend fun maxNumber(): Int
+
+    /** Освобождает место под номер [from]: все номера от него и выше сдвигаются на единицу. */
+    @Query("UPDATE test_cases SET number = number + 1 WHERE number >= :from")
+    suspend fun shiftFrom(from: Int)
+
+    @Query("UPDATE test_cases SET number = :number WHERE id = :id")
+    suspend fun setNumber(id: Long, number: Int)
 
     /** Ставит один статус сразу нескольким кейсам (status — имя значения Status). */
     @Query("UPDATE test_cases SET status = :status, updatedAt = :now WHERE id IN (:ids)")
@@ -108,7 +118,18 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
-@Database(entities = [TestCase::class, Section::class], version = 4, exportSchema = false)
+private val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `test_cases` ADD COLUMN `number` INTEGER NOT NULL DEFAULT 0")
+        // Нумеруем подряд по порядку создания: заодно закрываются нынешние пропуски
+        db.execSQL(
+            "UPDATE `test_cases` SET `number` = " +
+                "(SELECT COUNT(*) FROM `test_cases` AS t WHERE t.`id` <= `test_cases`.`id`)"
+        )
+    }
+}
+
+@Database(entities = [TestCase::class, Section::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TestCaseDao
     abstract fun sections(): SectionDao
@@ -124,7 +145,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "testcases.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }
