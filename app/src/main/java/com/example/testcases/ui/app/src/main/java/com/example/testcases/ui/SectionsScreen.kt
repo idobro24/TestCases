@@ -442,7 +442,6 @@ private fun EmptyHome(onCreateSection: () -> Unit, onImport: () -> Unit) {
     }
 }
 
-@Composable
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SectionCard(
