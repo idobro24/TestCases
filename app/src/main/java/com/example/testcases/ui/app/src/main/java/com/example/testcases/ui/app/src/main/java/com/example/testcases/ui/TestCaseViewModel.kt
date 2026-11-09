@@ -123,6 +123,30 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Возвращает кейсам статус «Не запущен» — для нового прогона. */
+    fun resetStatuses(ids: Collection<Long>) {
+        viewModelScope.launch {
+            db.withTransaction { setStatusInChunks(ids, Status.NOT_RUN) }
+        }
+    }
+
+    /** Отмена сброса: каждому кейсу возвращается прежний статус. */
+    fun restoreStatuses(previous: Map<Long, Status>) {
+        viewModelScope.launch {
+            db.withTransaction {
+                previous.entries
+                    .groupBy({ it.value }, { it.key })
+                    .forEach { (status, ids) -> setStatusInChunks(ids, status) }
+            }
+        }
+    }
+
+    // В SQLite ограничено число параметров в одном запросе, поэтому идём порциями
+    private suspend fun setStatusInChunks(ids: Collection<Long>, status: Status) {
+        val now = System.currentTimeMillis()
+        ids.chunked(500).forEach { dao.setStatus(it, status.name, now) }
+    }
+
     fun setStatus(testCase: TestCase, status: Status) {
         viewModelScope.launch {
             dao.update(testCase.copy(status = status, updatedAt = System.currentTimeMillis()))
