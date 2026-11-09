@@ -191,6 +191,7 @@ object Backup {
         put("bugScreens", JSONArray(c.bugScreenList))
         put("createdAt", c.createdAt)
         put("updatedAt", c.updatedAt)
+        put("number", c.number)
     }
 
     private fun caseFromJson(o: JSONObject): TestCase {
@@ -209,7 +210,8 @@ object Backup {
             bugDescription = o.optString("bugDescription", ""),
             bugScreens = strings(o.optJSONArray("bugScreens")).joinToString(TestCase.STEP_SEP),
             createdAt = o.optLong("createdAt", now),
-            updatedAt = o.optLong("updatedAt", now)
+            updatedAt = o.optLong("updatedAt", now),
+            number = o.optInt("number", 0)
         )
     }
 }
