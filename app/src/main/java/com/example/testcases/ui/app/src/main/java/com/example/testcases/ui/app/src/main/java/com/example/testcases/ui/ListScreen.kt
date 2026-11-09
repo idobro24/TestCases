@@ -53,6 +53,7 @@ fun CaseListScreen(
     var shareMenuOpen by remember { mutableStateOf(false) }
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
+    var showReset by rememberSaveable { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -73,6 +74,20 @@ fun CaseListScreen(
                     tc.title.contains(query, ignoreCase = true) ||
                     tc.code.contains(query, ignoreCase = true) ||
                     tc.description.contains(query, ignoreCase = true))
+        }
+    }
+
+    fun resetWithUndo(list: List<TestCase>) {
+        val previous = list.associate { it.id to it.status }
+        vm.resetStatuses(previous.keys)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar(
+                message = "Статусы сброшены: ${previous.size}",
+                actionLabel = "Отменить",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.restoreStatuses(previous)
         }
     }
 
@@ -166,12 +181,20 @@ fun CaseListScreen(
                             )
                         }
                     }
-                    if (section != null) {
-                        Box {
-                            IconButton(onClick = { menuOpen = true }) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с разделом")
-                            }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Действия")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Сбросить статусы") },
+                                enabled = scoped.any { it.status != Status.NOT_RUN },
+                                onClick = {
+                                    menuOpen = false
+                                    showReset = true
+                                }
+                            )
+                            if (section != null) {
                                 DropdownMenuItem(
                                     text = { Text("Переименовать") },
                                     onClick = {
@@ -249,6 +272,31 @@ fun CaseListScreen(
                 }
             }
         }
+    }
+
+    if (showReset) {
+        val toReset = scoped.filter { it.status != Status.NOT_RUN }
+        AlertDialog(
+            onDismissRequest = { showReset = false },
+            title = { Text("Сбросить статусы?") },
+            text = {
+                Text(
+                    "$title\n\nКейсов с проставленным статусом: ${toReset.size}. " +
+                        "Все они вернутся в «Не запущен», чтобы можно было начать новый прогон. " +
+                        "Отметки багов не изменятся."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = toReset.isNotEmpty(),
+                    onClick = {
+                        showReset = false
+                        resetWithUndo(toReset)
+                    }
+                ) { Text("Сбросить") }
+            },
+            dismissButton = { TextButton(onClick = { showReset = false }) { Text("Отмена") } }
+        )
     }
 
     if (showRename && section != null) {
