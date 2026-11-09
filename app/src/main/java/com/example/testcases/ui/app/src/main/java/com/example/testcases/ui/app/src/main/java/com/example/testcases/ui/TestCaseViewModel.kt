@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.example.testcases.data.AppDatabase
+import com.example.testcases.data.Backup
+import com.example.testcases.data.BackupContents
 import com.example.testcases.data.BugFiles
 import com.example.testcases.data.CsvImport
 import com.example.testcases.data.ImportResult
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Специальные «разделы» для экрана списка. Настоящие id всегда больше нуля. */
 const val SECTION_ALL = -1L
@@ -123,6 +126,40 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     fun setStatus(testCase: TestCase, status: Status) {
         viewModelScope.launch {
             dao.update(testCase.copy(status = status, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    // ---------------------------------------------------------- резервная копия
+
+    suspend fun createBackupFile(): File {
+        val allSections = sectionDao.getAll()
+        val allCases = dao.getAll()
+        return Backup.write(getApplication<Application>(), allSections, allCases)
+    }
+
+    suspend fun readBackup(uri: Uri): BackupContents = Backup.read(getApplication<Application>(), uri)
+
+    /** Заменяет все данные содержимым копии: скриншоты, разделы и кейсы с прежними номерами. */
+    fun restoreBackup(uri: Uri, contents: BackupContents, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = try {
+                Backup.extractScreens(getApplication<Application>(), uri)
+                val sectionIds = contents.sections.map { it.id }.toSet()
+                val restored = contents.cases.map { c ->
+                    val sid = c.sectionId
+                    if (sid != null && sid !in sectionIds) c.copy(sectionId = null) else c
+                }
+                db.withTransaction {
+                    dao.deleteAll()
+                    sectionDao.deleteAll()
+                    sectionDao.insertAll(contents.sections)
+                    dao.insertAll(restored)
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+            onDone(ok)
         }
     }
 
