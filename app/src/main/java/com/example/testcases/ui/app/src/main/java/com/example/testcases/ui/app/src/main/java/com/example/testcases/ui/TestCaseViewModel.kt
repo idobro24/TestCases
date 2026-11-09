@@ -151,6 +151,23 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { sectionDao.update(section.copy(name = clean)) }
     }
 
+    /** Удаляет сразу несколько разделов; кейсы либо удаляются вместе с ними, либо остаются без раздела. */
+    fun deleteSections(ids: Set<Long>, withCases: Boolean) {
+        val targets = sections.value.filter { it.id in ids }
+        viewModelScope.launch {
+            db.withTransaction {
+                for (s in targets) {
+                    if (withCases) {
+                        dao.deleteBySection(s.id)
+                    } else {
+                        dao.detachFromSection(s.id)
+                    }
+                    sectionDao.delete(s)
+                }
+            }
+        }
+    }
+
     fun deleteSection(section: Section, withCases: Boolean) {
         viewModelScope.launch {
             db.withTransaction {
