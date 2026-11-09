@@ -194,7 +194,8 @@ fun SectionsScreen(
                         onThemeChange = vm::setThemeMode,
                         onImport = onImport,
                         canSelect = sections.isNotEmpty(),
-                        onSelect = { selectionMode = true }
+                        onSelect = { selectionMode = true },
+                        backupSlot = { BackupMenu(vm) }
                     )
                 }
             }
@@ -330,7 +331,8 @@ private fun HomeHeader(
     onThemeChange: (ThemeMode) -> Unit,
     onImport: () -> Unit,
     canSelect: Boolean,
-    onSelect: () -> Unit
+    onSelect: () -> Unit,
+    backupSlot: @Composable () -> Unit
 ) {
     val passed = cases.count { it.status == Status.PASSED }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -341,6 +343,7 @@ private fun HomeHeader(
                 modifier = Modifier.weight(1f)
             )
             ThemeMenu(themeMode, onThemeChange)
+            backupSlot()
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
