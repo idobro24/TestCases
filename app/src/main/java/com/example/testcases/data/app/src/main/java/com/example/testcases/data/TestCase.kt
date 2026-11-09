@@ -22,6 +22,8 @@ enum class Priority(val label: String) {
 data class Section(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    /** Порядок на главном экране: меньше — выше. */
+    val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )
 
