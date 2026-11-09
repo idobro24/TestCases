@@ -87,7 +87,10 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     fun save(testCase: TestCase, onDone: () -> Unit) {
         viewModelScope.launch {
             if (testCase.id == 0L) {
-                dao.insert(testCase)
+                db.withTransaction {
+                    // Новый кейс получает следующий номер после последнего
+                    dao.insert(testCase.copy(number = dao.maxNumber() + 1))
+                }
             } else {
                 dao.update(testCase.copy(updatedAt = System.currentTimeMillis()))
             }
@@ -96,12 +99,22 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(testCase: TestCase) {
-        viewModelScope.launch { dao.delete(testCase) }
+        viewModelScope.launch {
+            db.withTransaction {
+                dao.delete(testCase)
+                renumber()
+            }
+        }
     }
 
-    /** Возвращает удалённый кейс на прежнее место (id сохраняется). */
+    /** Возвращает удалённый кейс на прежнее место: с тем же номером, остальные сдвигаются обратно. */
     fun restore(testCase: TestCase) {
-        viewModelScope.launch { dao.insert(testCase) }
+        viewModelScope.launch {
+            db.withTransaction {
+                if (testCase.number > 0) dao.shiftFrom(testCase.number)
+                dao.insert(testCase)
+            }
+        }
     }
 
     /**
@@ -118,8 +131,11 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                 createdAt = now,
                 updatedAt = now
             )
-            val newId = dao.insert(draft)
-            onDone(draft.copy(id = newId))
+            val saved = db.withTransaction {
+                val numbered = draft.copy(number = dao.maxNumber() + 1)
+                numbered.copy(id = dao.insert(numbered))
+            }
+            onDone(saved)
         }
     }
 
@@ -138,6 +154,13 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     .groupBy({ it.value }, { it.key })
                     .forEach { (status, ids) -> setStatusInChunks(ids, status) }
             }
+        }
+    }
+
+    /** Смыкает номера кейсов без пропусков: 1, 2, 3… в прежнем порядке. */
+    private suspend fun renumber() {
+        dao.getAll().forEachIndexed { index, c ->
+            if (c.number != index + 1) dao.setNumber(c.id, index + 1)
         }
     }
 
@@ -173,11 +196,17 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     val sid = c.sectionId
                     if (sid != null && sid !in sectionIds) c.copy(sectionId = null) else c
                 }
+                // Копии, сделанные до появления нумерации, номеров не содержат: нумеруем по порядку создания
+                val numbered = if (restored.any { it.number <= 0 } || restored.map { it.number }.toSet().size != restored.size) {
+                    restored.sortedBy { it.id }.mapIndexed { i, c -> c.copy(number = i + 1) }
+                } else {
+                    restored
+                }
                 db.withTransaction {
                     dao.deleteAll()
                     sectionDao.deleteAll()
                     sectionDao.insertAll(contents.sections)
-                    dao.insertAll(restored)
+                    dao.insertAll(numbered)
                 }
                 true
             } catch (e: Exception) {
@@ -225,6 +254,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     sectionDao.delete(s)
                 }
+                if (withCases) renumber()
             }
         }
     }
@@ -238,6 +268,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     dao.detachFromSection(section.id)
                 }
                 sectionDao.delete(section)
+                if (withCases) renumber()
             }
         }
     }
@@ -315,7 +346,8 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     )
                 }
-                dao.insertAll(cases)
+                val start = dao.maxNumber() + 1
+                dao.insertAll(cases.mapIndexed { i, c -> c.copy(number = start + i) })
             }
             onDone(parsed.size)
         }
