@@ -320,6 +320,10 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun createBackupFile(): File =
         Backup.write(getApplication<Application>(), projectDao.getAll(), sectionDao.getAll(), dao.getAll())
 
+    /** Сколько сейчас проектов, разделов и кейсов во всей базе (проекты, разделы, кейсы). */
+    suspend fun totalCounts(): Triple<Int, Int, Int> =
+        Triple(projectDao.getAll().size, sectionDao.getAll().size, dao.getAll().size)
+
     suspend fun readBackup(uri: Uri): BackupContents = Backup.read(getApplication<Application>(), uri)
 
     /** Заменяет все данные (все проекты) содержимым копии: скриншоты, проекты, разделы и кейсы с прежними номерами. */
