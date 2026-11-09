@@ -215,6 +215,7 @@ fun SectionsScreen(
                         onImport = onImport,
                         canSelect = sections.isNotEmpty(),
                         onSelect = { selectionMode = true },
+                        projectSlot = { ProjectSwitcher(vm) },
                         backupSlot = { BackupMenu(vm) }
                     )
                 }
@@ -379,16 +380,13 @@ private fun HomeHeader(
     onImport: () -> Unit,
     canSelect: Boolean,
     onSelect: () -> Unit,
+    projectSlot: @Composable () -> Unit,
     backupSlot: @Composable () -> Unit
 ) {
     val passed = cases.count { it.status == Status.PASSED }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Тест-кейсы",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.weight(1f)
-            )
+            Box(Modifier.weight(1f)) { projectSlot() }
             ThemeMenu(themeMode, onThemeChange)
             backupSlot()
         }
@@ -589,7 +587,8 @@ internal fun SectionNameDialog(
     initial: String,
     confirmLabel: String,
     onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    label: String = "Название раздела"
 ) {
     var name by rememberSaveable { mutableStateOf(initial) }
     AlertDialog(
@@ -600,7 +599,7 @@ internal fun SectionNameDialog(
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                label = { Text("Название раздела") },
+                label = { Text(label) },
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
             )
