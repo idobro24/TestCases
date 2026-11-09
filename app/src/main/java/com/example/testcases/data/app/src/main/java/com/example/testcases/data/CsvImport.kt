@@ -12,7 +12,9 @@ data class ParsedCase(
     val steps: List<String>,
     val expected: String,
     val priority: Priority,
-    val status: Status
+    val status: Status,
+    val hasBug: Boolean = false,
+    val bugDescription: String = ""
 )
 
 data class ImportResult(
@@ -39,7 +41,9 @@ object CsvImport {
         STEPS(setOf("шаги", "шаг", "steps", "step", "действия")),
         EXPECTED(setOf("ожидаемый результат", "ожидаемый", "expected", "expected result", "результат")),
         PRIORITY(setOf("приоритет", "priority")),
-        STATUS(setOf("статус", "status"))
+        STATUS(setOf("статус", "status")),
+        BUG(setOf("баг", "bug", "есть баг")),
+        BUG_DESC(setOf("описание бага", "что не так", "bug description"))
     }
 
     fun parse(bytes: ByteArray): ImportResult {
@@ -142,6 +146,7 @@ object CsvImport {
                 }
             }
 
+            val bugDescription = cell(Field.BUG_DESC)
             cases.add(
                 ParsedCase(
                     sectionName = cell(Field.SECTION).ifEmpty { null },
@@ -151,7 +156,9 @@ object CsvImport {
                     steps = parseSteps(cell(Field.STEPS)),
                     expected = cell(Field.EXPECTED),
                     priority = priority,
-                    status = status
+                    status = status,
+                    hasBug = bugDescription.isNotEmpty() || isYes(cell(Field.BUG)),
+                    bugDescription = bugDescription
                 )
             )
         }
@@ -260,6 +267,9 @@ object CsvImport {
         raw.split('\n', '|')
             .map { it.replace(numbering, "").trim() }
             .filter { it.isNotEmpty() }
+
+    private fun isYes(raw: String): Boolean =
+        normalize(raw) in setOf("да", "yes", "true", "1", "x", "+", "есть")
 
     private fun parsePriority(raw: String): Priority? = when (normalize(raw)) {
         "низкий", "low", "1", "minor", "trivial" -> Priority.LOW
