@@ -10,6 +10,7 @@ import androidx.room.withTransaction
 import com.example.testcases.data.AppDatabase
 import com.example.testcases.data.Backup
 import com.example.testcases.data.BackupContents
+import com.example.testcases.data.Block
 import com.example.testcases.data.BugFiles
 import com.example.testcases.data.CsvImport
 import com.example.testcases.data.ImportResult
@@ -37,6 +38,10 @@ import java.io.File
 const val SECTION_ALL = -1L
 const val SECTION_NONE = 0L
 
+/** Особые «вкладки» главного экрана. Настоящие вкладки имеют id больше нуля. */
+const val TAB_ALL = -1L
+const val TAB_NONE = 0L
+
 fun List<TestCase>.inSection(sectionId: Long): List<TestCase> = when (sectionId) {
     SECTION_ALL -> this
     SECTION_NONE -> filter { it.sectionId == null }
@@ -51,6 +56,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = db.dao()
     private val sectionDao = db.sections()
     private val projectDao = db.projects()
+    private val blockDao = db.blocks()
     private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     init {
@@ -91,6 +97,71 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { pid -> sectionDao.observeByProject(pid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    // ---------------------------------------------------------- вкладки (группы разделов)
+
+    private val _selectedTab = MutableStateFlow(prefs.getLong("tab_${_currentProjectId.value}", TAB_ALL))
+
+    /** Выбранная вкладка главного экрана: TAB_ALL, TAB_NONE или id вкладки. Запоминается для каждого проекта. */
+    val selectedTab: StateFlow<Long> = _selectedTab.asStateFlow()
+
+    /** Вкладки текущего проекта. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val blocks: StateFlow<List<Block>> = _currentProjectId
+        .flatMapLatest { pid -> blockDao.observeByProject(pid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun selectTab(id: Long) {
+        _selectedTab.value = id
+        prefs.edit().putLong("tab_${_currentProjectId.value}", id).apply()
+    }
+
+    fun addBlock(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        val order = (blocks.value.maxOfOrNull { it.sortOrder } ?: 0) + 1
+        val pid = _currentProjectId.value
+        viewModelScope.launch {
+            val id = blockDao.insert(Block(projectId = pid, name = clean, sortOrder = order))
+            selectTab(id)
+        }
+    }
+
+    fun renameBlock(block: Block, name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch { blockDao.update(block.copy(name = clean)) }
+    }
+
+    /** Удаляет вкладку. Её разделы и кейсы остаются и переходят в «Без вкладки». */
+    fun deleteBlock(block: Block) {
+        viewModelScope.launch {
+            db.withTransaction {
+                sectionDao.detachFromBlock(block.id)
+                blockDao.delete(block)
+            }
+            if (_selectedTab.value == block.id) selectTab(TAB_ALL)
+        }
+    }
+
+    /** Сдвигает вкладку на одну позицию: [delta] = -1 влево, +1 вправо. */
+    fun moveBlock(block: Block, delta: Int) {
+        val list = blocks.value.toMutableList()
+        val from = list.indexOfFirst { it.id == block.id }
+        val to = from + delta
+        if (from < 0 || to !in list.indices) return
+        list.add(to, list.removeAt(from))
+        viewModelScope.launch {
+            db.withTransaction { list.forEachIndexed { i, b -> blockDao.setSortOrder(b.id, i + 1) } }
+        }
+    }
+
+    /** Переносит разделы во вкладку [blockId] (null — «Без вкладки»). */
+    fun moveSectionsToBlock(ids: Collection<Long>, blockId: Long?) {
+        viewModelScope.launch {
+            db.withTransaction { ids.chunked(500).forEach { sectionDao.setBlock(it, blockId) } }
+        }
+    }
+
     init {
         // Всегда должен быть хотя бы один проект, а выбранный — существовать
         viewModelScope.launch {
@@ -105,6 +176,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectProject(id: Long) {
         _currentProjectId.value = id
+        _selectedTab.value = prefs.getLong("tab_$id", TAB_ALL)
         prefs.edit().putLong("project", id).apply()
     }
 
@@ -131,6 +203,7 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
             db.withTransaction {
                 dao.deleteByProject(project.id)
                 sectionDao.deleteByProject(project.id)
+                blockDao.deleteByProject(project.id)
                 projectDao.delete(project)
             }
             if (_currentProjectId.value == project.id) {
@@ -318,7 +391,13 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------- резервная копия
 
     suspend fun createBackupFile(): File =
-        Backup.write(getApplication<Application>(), projectDao.getAll(), sectionDao.getAll(), dao.getAll())
+        Backup.write(
+            getApplication<Application>(),
+            projectDao.getAll(),
+            blockDao.getAll(),
+            sectionDao.getAll(),
+            dao.getAll()
+        )
 
     /** Сколько сейчас проектов, разделов и кейсов во всей базе (проекты, разделы, кейсы). */
     suspend fun totalCounts(): Triple<Int, Int, Int> =
@@ -334,8 +413,15 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
 
                 val projectIds = contents.projects.map { it.id }.toSet()
                 val fallback = contents.projects.first().id
+                val restoredBlocks = contents.blocks.map { b ->
+                    if (b.projectId in projectIds) b else b.copy(projectId = fallback)
+                }
+                val blockProject = restoredBlocks.associate { it.id to it.projectId }
                 val restoredSections = contents.sections.map { sec ->
-                    if (sec.projectId in projectIds) sec else sec.copy(projectId = fallback)
+                    val pid = if (sec.projectId in projectIds) sec.projectId else fallback
+                    val bid = sec.blockId
+                    // Вкладка должна существовать и относиться к тому же проекту
+                    sec.copy(projectId = pid, blockId = if (bid != null && blockProject[bid] == pid) bid else null)
                 }
                 val sectionProject = restoredSections.associate { it.id to it.projectId }
                 val restored = contents.cases.map { c ->
@@ -357,7 +443,9 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     dao.deleteAll()
                     sectionDao.deleteAll()
                     projectDao.deleteAll()
+                    blockDao.deleteAll()
                     projectDao.insertAll(contents.projects)
+                    blockDao.insertAll(restoredBlocks)
                     sectionDao.insertAll(restoredSections)
                     dao.insertAll(numbered)
                 }
@@ -371,13 +459,13 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------- разделы
 
-    fun addSection(name: String) {
+    fun addSection(name: String, blockId: Long? = null) {
         val clean = name.trim()
         if (clean.isEmpty()) return
         // Новый раздел встаёт в конец списка
         val order = (sections.value.maxOfOrNull { it.sortOrder } ?: 0) + 1
         val pid = _currentProjectId.value
-        viewModelScope.launch { sectionDao.insert(Section(name = clean, sortOrder = order, projectId = pid)) }
+        viewModelScope.launch { sectionDao.insert(Section(name = clean, sortOrder = order, projectId = pid, blockId = blockId)) }
     }
 
     /** Сохраняет новый порядок разделов: [ids] — id разделов сверху вниз. */
