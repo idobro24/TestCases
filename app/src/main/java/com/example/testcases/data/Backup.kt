@@ -25,6 +25,7 @@ class BackupException(message: String) : Exception(message)
 /** Что лежит в копии (скриншоты считаются, но не загружаются в память). */
 class BackupContents(
     val projects: List<Project>,
+    val blocks: List<Block>,
     val sections: List<Section>,
     val cases: List<TestCase>,
     val screenCount: Int
@@ -37,7 +38,7 @@ class BackupContents(
 object Backup {
 
     private const val APP_ID = "testcases"
-    private const val FORMAT = 2
+    private const val FORMAT = 3
     private const val DATA = "data.json"
     private const val SCREENS = "screens/"
 
@@ -46,6 +47,7 @@ object Backup {
     suspend fun write(
         context: Context,
         projects: List<Project>,
+        blocks: List<Block>,
         sections: List<Section>,
         cases: List<TestCase>
     ): File =
@@ -59,6 +61,7 @@ object Backup {
                 put("format", FORMAT)
                 put("exportedAt", System.currentTimeMillis())
                 put("projects", JSONArray().also { arr -> projects.forEach { arr.put(projectToJson(it)) } })
+                put("blocks", JSONArray().also { arr -> blocks.forEach { arr.put(blockToJson(it)) } })
                 put("sections", JSONArray().also { arr -> sections.forEach { arr.put(sectionToJson(it)) } })
                 put("cases", JSONArray().also { arr -> cases.forEach { arr.put(caseToJson(it)) } })
             }
@@ -138,9 +141,10 @@ object Backup {
             // Копии старого формата без проектов целиком попадают в «Проект 1»
             val projects = objects(root.optJSONArray("projects")).map { projectFromJson(it) }
                 .ifEmpty { listOf(Project(id = 1, name = "Проект 1")) }
+            val blocks = objects(root.optJSONArray("blocks")).map { blockFromJson(it) }
             val sections = objects(root.optJSONArray("sections")).map { sectionFromJson(it) }
             val cases = objects(root.optJSONArray("cases")).map { caseFromJson(it) }
-            BackupContents(projects, sections, cases, screens)
+            BackupContents(projects, blocks, sections, cases, screens)
         } catch (e: Exception) {
             throw BackupException("Файл копии повреждён.")
         }
@@ -184,11 +188,28 @@ object Backup {
         createdAt = o.optLong("createdAt", System.currentTimeMillis())
     )
 
+    private fun blockToJson(b: Block) = JSONObject().apply {
+        put("id", b.id)
+        put("projectId", b.projectId)
+        put("name", b.name)
+        put("sortOrder", b.sortOrder)
+        put("createdAt", b.createdAt)
+    }
+
+    private fun blockFromJson(o: JSONObject) = Block(
+        id = o.getLong("id"),
+        projectId = o.optLong("projectId", 1),
+        name = o.optString("name", "Вкладка"),
+        sortOrder = o.optInt("sortOrder", 0),
+        createdAt = o.optLong("createdAt", System.currentTimeMillis())
+    )
+
     private fun sectionToJson(s: Section) = JSONObject().apply {
         put("id", s.id)
         put("name", s.name)
         put("sortOrder", s.sortOrder)
         put("projectId", s.projectId)
+        put("blockId", s.blockId ?: JSONObject.NULL)
         put("createdAt", s.createdAt)
     }
 
@@ -197,6 +218,7 @@ object Backup {
         name = o.optString("name", ""),
         sortOrder = o.optInt("sortOrder", 0),
         projectId = o.optLong("projectId", 1),
+        blockId = if (o.isNull("blockId")) null else o.getLong("blockId"),
         createdAt = o.optLong("createdAt", System.currentTimeMillis())
     )
 
