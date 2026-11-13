@@ -26,6 +26,16 @@ data class Project(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/** Вкладка: группа разделов внутри проекта (например, «Клиент» и «Мастер»). */
+@Entity(tableName = "blocks")
+data class Block(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val projectId: Long = 1,
+    val name: String,
+    val sortOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "sections")
 data class Section(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -34,6 +44,8 @@ data class Section(
     val sortOrder: Int = 0,
     /** Проект, которому принадлежит раздел. */
     val projectId: Long = 1,
+    /** Вкладка, в которой лежит раздел; null — «Без вкладки». */
+    val blockId: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
