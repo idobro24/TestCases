@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -50,7 +51,13 @@ fun SectionsScreen(
     val all by vm.all.collectAsStateWithLifecycle()
     val sections by vm.sections.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+    val blocks by vm.blocks.collectAsStateWithLifecycle()
+    val selectedRaw by vm.selectedTab.collectAsStateWithLifecycle()
+    val tab = effectiveTab(selectedRaw, blocks)
+    // Разделы выбранной вкладки (в «Все» — все разделы)
+    val inTab = sections.filter { it.inTab(tab) }
     var showCreate by rememberSaveable { mutableStateOf(false) }
+    var showMoveToTab by rememberSaveable { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
@@ -61,10 +68,10 @@ fun SectionsScreen(
 
     // Порядок на время перетаскивания; в базу он пишется, когда палец отпущен
     var localOrder by remember { mutableStateOf<List<Section>?>(null) }
-    LaunchedEffect(sections) { localOrder = null }
-    val shown = localOrder ?: sections
+    LaunchedEffect(sections, tab) { localOrder = null }
+    val shown = localOrder ?: inTab
     val shownState = rememberUpdatedState(shown)
-    val savedState = rememberUpdatedState(sections)
+    val savedState = rememberUpdatedState(inTab)
     var draggingId by remember { mutableStateOf<Long?>(null) }
     var dragOffset by remember { mutableStateOf(0f) }
 
@@ -127,11 +134,18 @@ fun SectionsScreen(
         dragOffset += if (toIndex > index) -shift else shift
     }
 
+    /** Новый порядок видимых разделов встаёт на их же места в общем списке: остальные разделы не сдвигаются. */
+    fun mergedOrder(visibleIds: List<Long>): List<Long> {
+        val visibleSet = visibleIds.toSet()
+        val iterator = visibleIds.iterator()
+        return sections.map { if (it.id in visibleSet) iterator.next() else it.id }
+    }
+
     fun finishDrag() {
         val ids = shownState.value.map { it.id }
         draggingId = null
         dragOffset = 0f
-        if (ids == savedState.value.map { it.id }) localOrder = null else vm.reorderSections(ids)
+        if (ids == savedState.value.map { it.id }) localOrder = null else vm.reorderSections(mergedOrder(ids))
     }
 
     // Автопрокрутка: у края экрана список едет сам, чтобы можно было дотащить раздел далеко
@@ -195,16 +209,17 @@ fun SectionsScreen(
                 if (selectionMode) {
                     SelectionHeader(
                         count = selected.size,
-                        total = sections.size,
+                        allSelected = inTab.isNotEmpty() && inTab.all { it.id in selected },
                         onCancel = ::exitSelection,
                         onSelectAll = {
-                            selected = if (selected.size == sections.size) {
+                            selected = if (inTab.isNotEmpty() && inTab.all { it.id in selected }) {
                                 emptySet()
                             } else {
-                                sections.map { it.id }.toSet()
+                                inTab.map { it.id }.toSet()
                             }
                         },
                         onReset = { showResetSelected = true },
+                        onMoveToTab = { showMoveToTab = true },
                         onDelete = { showDeleteSelected = true }
                     )
                 } else {
@@ -221,12 +236,18 @@ fun SectionsScreen(
                 }
             }
 
+            if (sections.isNotEmpty() || blocks.isNotEmpty()) {
+                item(key = "tabs") {
+                    SectionTabs(vm = vm, hasUnassigned = sections.any { it.blockId == null })
+                }
+            }
+
             if (list.isEmpty() && sections.isEmpty()) {
                 item(key = "empty") {
                     EmptyHome(onCreateSection = { showCreate = true }, onImport = onImport)
                 }
             } else {
-                if (!selectionMode) item(key = "all") {
+                if (!selectionMode && tab == TAB_ALL) item(key = "all") {
                     SectionCard(
                         title = "Все кейсы",
                         cases = list,
@@ -238,6 +259,7 @@ fun SectionsScreen(
                     val dragging = draggingId == s.id
                     SectionCard(
                         title = s.name,
+                        badge = if (tab == TAB_ALL) blocks.firstOrNull { it.id == s.blockId }?.name else null,
                         cases = list.filter { it.sectionId == s.id },
                         modifier = if (dragging) {
                             Modifier.zIndex(1f).graphicsLayer { translationY = dragOffset }
@@ -270,8 +292,11 @@ fun SectionsScreen(
                         onClick = { if (selectionMode) toggle(s.id) else onOpenSection(s.id) }
                     )
                 }
+                if (inTab.isEmpty() && tab != TAB_ALL) {
+                    item(key = "tabEmpty") { EmptyTab() }
+                }
                 val loose = list.filter { it.sectionId == null }
-                if (loose.isNotEmpty() && !selectionMode) {
+                if (loose.isNotEmpty() && !selectionMode && tab == TAB_ALL) {
                     item(key = "none") {
                         SectionCard(
                             title = "Без раздела",
@@ -290,10 +315,40 @@ fun SectionsScreen(
             initial = "",
             confirmLabel = "Создать",
             onConfirm = {
-                vm.addSection(it)
+                vm.addSection(it, blockId = if (tab > 0) tab else null)
                 showCreate = false
             },
             onDismiss = { showCreate = false }
+        )
+    }
+
+    if (showMoveToTab) {
+        fun moveTo(blockId: Long?) {
+            vm.moveSectionsToBlock(selected, blockId)
+            showMoveToTab = false
+            exitSelection()
+        }
+        AlertDialog(
+            onDismissRequest = { showMoveToTab = false },
+            title = { Text("Переместить во вкладку") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    item(key = "none") { TabChoiceRow("Без вкладки") { moveTo(null) } }
+                    items(blocks, key = { it.id }) { b -> TabChoiceRow(b.name) { moveTo(b.id) } }
+                    if (blocks.isEmpty()) {
+                        item(key = "hint") {
+                            Text(
+                                "Вкладок пока нет. Создайте вкладку кнопкой «+» над списком разделов.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showMoveToTab = false }) { Text("Отмена") } }
         )
     }
 
@@ -443,12 +498,14 @@ private fun ThemeMenu(mode: ThemeMode, onChange: (ThemeMode) -> Unit) {
 @Composable
 private fun SelectionHeader(
     count: Int,
-    total: Int,
+    allSelected: Boolean,
     onCancel: () -> Unit,
     onSelectAll: () -> Unit,
     onReset: () -> Unit,
+    onMoveToTab: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var menu by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onCancel) {
             Icon(Icons.Rounded.Close, contentDescription = "Отменить выбор")
@@ -459,10 +516,28 @@ private fun SelectionHeader(
             modifier = Modifier.weight(1f)
         )
         TextButton(onClick = onSelectAll) {
-            Text(if (count == total) "Снять все" else "Выбрать все")
+            Text(if (allSelected) "Снять все" else "Выбрать все")
         }
-        IconButton(onClick = onReset, enabled = count > 0) {
-            Icon(Icons.Rounded.Refresh, contentDescription = "Сбросить статусы выбранных разделов")
+        Box {
+            IconButton(onClick = { menu = true }, enabled = count > 0) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Ещё")
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Во вкладку…") },
+                    onClick = {
+                        menu = false
+                        onMoveToTab()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Сбросить статусы") },
+                    onClick = {
+                        menu = false
+                        onReset()
+                    }
+                )
+            }
         }
         IconButton(onClick = onDelete, enabled = count > 0) {
             Icon(
@@ -499,6 +574,7 @@ private fun EmptyHome(onCreateSection: () -> Unit, onImport: () -> Unit) {
 private fun SectionCard(
     title: String,
     cases: List<TestCase>,
+    badge: String? = null,
     highlighted: Boolean = false,
     modifier: Modifier = Modifier,
     dragging: Boolean = false,
@@ -535,6 +611,15 @@ private fun SectionCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
+                    if (badge != null) {
+                        Text(
+                            badge,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
@@ -610,5 +695,37 @@ internal fun SectionNameDialog(
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
+private fun EmptyTab() {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 32.dp, start = 16.dp, end = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("В этой вкладке пока нет разделов", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Создайте раздел кнопкой «Новый раздел» или перенесите сюда готовые: " +
+                "«Выбрать» → отметьте разделы → ⋮ → «Во вкладку…».",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun TabChoiceRow(text: String, onClick: () -> Unit) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyLarge,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp)
     )
 }
