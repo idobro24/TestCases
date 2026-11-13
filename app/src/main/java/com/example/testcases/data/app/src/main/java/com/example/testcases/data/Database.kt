@@ -94,6 +94,12 @@ interface SectionDao {
     @Query("DELETE FROM sections WHERE projectId = :projectId")
     suspend fun deleteByProject(projectId: Long)
 
+    @Query("UPDATE sections SET blockId = :blockId WHERE id IN (:ids)")
+    suspend fun setBlock(ids: List<Long>, blockId: Long?)
+
+    @Query("UPDATE sections SET blockId = NULL WHERE blockId = :blockId")
+    suspend fun detachFromBlock(blockId: Long)
+
     @Insert
     suspend fun insertAll(sections: List<Section>)
 
@@ -108,6 +114,37 @@ interface SectionDao {
 
     @Delete
     suspend fun delete(section: Section)
+}
+
+@Dao
+interface BlockDao {
+    @Query("SELECT * FROM blocks WHERE projectId = :projectId ORDER BY sortOrder ASC, id ASC")
+    fun observeByProject(projectId: Long): Flow<List<Block>>
+
+    /** Вкладки всех проектов — для резервной копии. */
+    @Query("SELECT * FROM blocks ORDER BY projectId ASC, sortOrder ASC, id ASC")
+    suspend fun getAll(): List<Block>
+
+    @Query("DELETE FROM blocks")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM blocks WHERE projectId = :projectId")
+    suspend fun deleteByProject(projectId: Long)
+
+    @Query("UPDATE blocks SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: Long, sortOrder: Int)
+
+    @Insert
+    suspend fun insert(block: Block): Long
+
+    @Insert
+    suspend fun insertAll(blocks: List<Block>)
+
+    @Update
+    suspend fun update(block: Block)
+
+    @Delete
+    suspend fun delete(block: Block)
 }
 
 @Dao
@@ -191,6 +228,21 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `blocks` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`projectId` INTEGER NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`sortOrder` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL)"
+        )
+        // Существующие разделы пока без вкладки
+        db.execSQL("ALTER TABLE `sections` ADD COLUMN `blockId` INTEGER")
+    }
+}
+
 /** При первом создании базы (чистая установка) сразу заводим первый проект. */
 private val SeedFirstProject = object : RoomDatabase.Callback() {
     override fun onCreate(db: SupportSQLiteDatabase) {
@@ -202,14 +254,15 @@ private val SeedFirstProject = object : RoomDatabase.Callback() {
 }
 
 @Database(
-    entities = [TestCase::class, Section::class, Project::class],
-    version = 6,
+    entities = [TestCase::class, Section::class, Project::class, Block::class],
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TestCaseDao
     abstract fun sections(): SectionDao
     abstract fun projects(): ProjectDao
+    abstract fun blocks(): BlockDao
 
     companion object {
         @Volatile
@@ -223,7 +276,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "testcases.db"
                 )
                     .addMigrations(
-                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
                     )
                     .addCallback(SeedFirstProject)
                     .build()
