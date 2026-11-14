@@ -31,8 +31,6 @@ import com.example.testcases.data.Backup
 import com.example.testcases.data.BackupContents
 import com.example.testcases.data.BackupException
 import com.example.testcases.data.CsvExport
-import com.example.testcases.data.ResultsFile
-import com.example.testcases.data.ResultsPlan
 import com.example.testcases.data.RunResults
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -43,12 +41,6 @@ private class PendingRestore(
     val uri: Uri,
     val contents: BackupContents,
     val current: Triple<Int, Int, Int>
-)
-
-private class PendingResults(
-    val uri: Uri,
-    val file: ResultsFile,
-    val plan: ResultsPlan
 )
 
 /**
@@ -68,7 +60,8 @@ fun BackupMenu(vm: TestCaseViewModel) {
     var open by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<PendingRestore?>(null) }
-    var pendingResults by remember { mutableStateOf<PendingResults?>(null) }
+    val pendingResults by vm.pendingResults.collectAsStateWithLifecycle()
+    val resultsBusy by vm.resultsBusy.collectAsStateWithLifecycle()
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
@@ -90,21 +83,7 @@ fun BackupMenu(vm: TestCaseViewModel) {
     }
 
     val resultsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                busy = true
-                try {
-                    val file = vm.readResults(uri)
-                    pendingResults = PendingResults(uri, file, vm.planResults(file))
-                } catch (e: BackupException) {
-                    toast(e.message ?: "Не удалось прочитать файл.")
-                } catch (e: Exception) {
-                    toast("Не удалось прочитать файл.")
-                } finally {
-                    busy = false
-                }
-            }
-        }
+        if (uri != null) vm.loadResults(uri)
     }
 
     Box {
@@ -187,7 +166,7 @@ fun BackupMenu(vm: TestCaseViewModel) {
         }
     }
 
-    if (busy) {
+    if (busy || resultsBusy) {
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
@@ -210,7 +189,7 @@ fun BackupMenu(vm: TestCaseViewModel) {
         }
         val changed = plan.updated.size
         AlertDialog(
-            onDismissRequest = { pendingResults = null },
+            onDismissRequest = { vm.dismissResults() },
             title = { Text("Принять результаты?") },
             text = {
                 Text(
@@ -236,26 +215,13 @@ fun BackupMenu(vm: TestCaseViewModel) {
             confirmButton = {
                 TextButton(
                     enabled = changed > 0,
-                    onClick = {
-                        pendingResults = null
-                        busy = true
-                        vm.applyResults(r.uri, plan) { ok ->
-                            busy = false
-                            toast(
-                                if (ok) {
-                                    "Обновлено: $changed ${plural(changed, "кейс", "кейса", "кейсов")}"
-                                } else {
-                                    "Не удалось применить результаты"
-                                }
-                            )
-                        }
-                    }
+                    onClick = { vm.applyResults() }
                 ) {
                     Text("Применить")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingResults = null }) {
+                TextButton(onClick = { vm.dismissResults() }) {
                     Text(if (changed > 0) "Отмена" else "Закрыть")
                 }
             }
