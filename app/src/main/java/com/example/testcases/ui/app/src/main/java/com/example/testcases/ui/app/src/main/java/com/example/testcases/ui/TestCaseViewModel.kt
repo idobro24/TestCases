@@ -4,12 +4,14 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.example.testcases.data.AppDatabase
 import com.example.testcases.data.Backup
 import com.example.testcases.data.BackupContents
+import com.example.testcases.data.BackupException
 import com.example.testcases.data.Block
 import com.example.testcases.data.BugFiles
 import com.example.testcases.data.CsvImport
@@ -52,6 +54,9 @@ fun List<TestCase>.inSection(sectionId: Long): List<TestCase> = when (sectionId)
 }
 
 data class ImportPreview(val fileName: String, val result: ImportResult)
+
+/** Прочитанный файл результатов, ждущий подтверждения. */
+class PendingResults(val uri: Uri, val file: ResultsFile, val plan: ResultsPlan)
 
 class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -470,25 +475,58 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
         return RunResults.write(getApplication<Application>(), name, dao.getByProject(pid), sectionNames)
     }
 
-    suspend fun readResults(uri: Uri): ResultsFile = RunResults.read(getApplication<Application>(), uri)
+    // Состояние хранится здесь, а не в меню: пока открыт выбор файла, главный экран
+    // может на миг убрать меню, и работа, привязанная к нему, оборвалась бы.
+    private val _pendingResults = MutableStateFlow<PendingResults?>(null)
+    val pendingResults: StateFlow<PendingResults?> = _pendingResults.asStateFlow()
 
-    /** Что изменится в текущем проекте, если принять результаты. Ничего не меняет. */
-    suspend fun planResults(file: ResultsFile): ResultsPlan {
-        val pid = _currentProjectId.value
-        val sectionNames = sectionDao.getByProject(pid).associate { it.id to it.name }
-        return RunResults.plan(file, dao.getByProject(pid), sectionNames)
+    private val _resultsBusy = MutableStateFlow(false)
+    val resultsBusy: StateFlow<Boolean> = _resultsBusy.asStateFlow()
+
+    private fun longToast(text: String) =
+        Toast.makeText(getApplication<Application>(), text, Toast.LENGTH_LONG).show()
+
+    /** Читает файл результатов и считает, что изменится в текущем проекте. Ничего не меняет. */
+    fun loadResults(uri: Uri) {
+        viewModelScope.launch {
+            _resultsBusy.value = true
+            try {
+                val file = RunResults.read(getApplication<Application>(), uri)
+                val pid = _currentProjectId.value
+                val sectionNames = sectionDao.getByProject(pid).associate { it.id to it.name }
+                val plan = RunResults.plan(file, dao.getByProject(pid), sectionNames)
+                _pendingResults.value = PendingResults(uri, file, plan)
+            } catch (e: BackupException) {
+                longToast(e.message ?: "Не удалось прочитать файл.")
+            } catch (e: Exception) {
+                longToast("Не удалось прочитать файл: ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            } finally {
+                _resultsBusy.value = false
+            }
+        }
     }
 
-    fun applyResults(uri: Uri, plan: ResultsPlan, onDone: (Boolean) -> Unit) {
+    fun dismissResults() {
+        _pendingResults.value = null
+    }
+
+    /** Применяет прочитанные результаты к текущему проекту. */
+    fun applyResults() {
+        val pending = _pendingResults.value ?: return
+        _pendingResults.value = null
+        val plan = pending.plan
         viewModelScope.launch {
-            val ok = try {
-                RunResults.extractScreens(getApplication<Application>(), uri, plan.screens)
+            _resultsBusy.value = true
+            try {
+                RunResults.extractScreens(getApplication<Application>(), pending.uri, plan.screens)
                 db.withTransaction { plan.updated.forEach { dao.update(it) } }
-                true
+                val n = plan.updated.size
+                longToast("Обновлено: $n ${plural(n, "кейс", "кейса", "кейсов")}")
             } catch (e: Exception) {
-                false
+                longToast("Не удалось применить результаты: ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            } finally {
+                _resultsBusy.value = false
             }
-            onDone(ok)
         }
     }
 
