@@ -31,7 +31,13 @@ import com.example.testcases.data.Backup
 import com.example.testcases.data.BackupContents
 import com.example.testcases.data.BackupException
 import com.example.testcases.data.CsvExport
+import com.example.testcases.data.ResultsFile
+import com.example.testcases.data.ResultsPlan
+import com.example.testcases.data.RunResults
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private class PendingRestore(
     val uri: Uri,
@@ -39,8 +45,15 @@ private class PendingRestore(
     val current: Triple<Int, Int, Int>
 )
 
+private class PendingResults(
+    val uri: Uri,
+    val file: ResultsFile,
+    val plan: ResultsPlan
+)
+
 /**
  * Меню «⋮» на главном экране: выгрузить все кейсы проекта в Excel,
+ * обменяться результатами прогона с другим устройством,
  * сохранить полную копию данных одним файлом и восстановить данные из такой копии.
  */
 @Composable
@@ -55,6 +68,7 @@ fun BackupMenu(vm: TestCaseViewModel) {
     var open by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<PendingRestore?>(null) }
+    var pendingResults by remember { mutableStateOf<PendingResults?>(null) }
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 
@@ -75,9 +89,27 @@ fun BackupMenu(vm: TestCaseViewModel) {
         }
     }
 
+    val resultsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                busy = true
+                try {
+                    val file = vm.readResults(uri)
+                    pendingResults = PendingResults(uri, file, vm.planResults(file))
+                } catch (e: BackupException) {
+                    toast(e.message ?: "Не удалось прочитать файл.")
+                } catch (e: Exception) {
+                    toast("Не удалось прочитать файл.")
+                } finally {
+                    busy = false
+                }
+            }
+        }
+    }
+
     Box {
         IconButton(onClick = { open = true }) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "Резервная копия")
+            Icon(Icons.Rounded.MoreVert, contentDescription = "Меню")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
@@ -100,6 +132,33 @@ fun BackupMenu(vm: TestCaseViewModel) {
                             sections.associate { it.id to it.name }
                         )
                     }
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Отправить результаты") },
+                onClick = {
+                    open = false
+                    if (cases.orEmpty().isEmpty()) {
+                        toast("В проекте пока нет кейсов")
+                    } else {
+                        scope.launch {
+                            busy = true
+                            try {
+                                RunResults.share(context, vm.createResultsFile())
+                            } catch (e: Exception) {
+                                toast("Не удалось создать файл: ${e.message}")
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Принять результаты") },
+                onClick = {
+                    open = false
+                    resultsPicker.launch(arrayOf("*/*"))
                 }
             )
             DropdownMenuItem(
@@ -136,6 +195,68 @@ fun BackupMenu(vm: TestCaseViewModel) {
             text = {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
+                }
+            }
+        )
+    }
+
+    pendingResults?.let { r ->
+        val plan = r.plan
+        val currentName = projects.firstOrNull { it.id == currentProjectId }?.name.orEmpty()
+        val date = if (r.file.exportedAt > 0) {
+            SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(r.file.exportedAt))
+        } else {
+            ""
+        }
+        val changed = plan.updated.size
+        AlertDialog(
+            onDismissRequest = { pendingResults = null },
+            title = { Text("Принять результаты?") },
+            text = {
+                Text(
+                    buildString {
+                        append("Файл: проект «${r.file.project}»")
+                        if (date.isNotEmpty()) append(", $date")
+                        append(".\nПрименится к проекту «$currentName».\n\n")
+                        append("Изменится: $changed ${plural(changed, "кейс", "кейса", "кейсов")}")
+                        if (changed > 0) {
+                            val byStatus = plan.updated.groupingBy { it.status }.eachCount()
+                            append(" (")
+                            append(byStatus.entries.joinToString(", ") { "${it.key.label.lowercase()}: ${it.value}" })
+                            append(")")
+                        }
+                        append(".\nБез изменений: ${plan.unchanged}.")
+                        if (plan.notFound > 0) {
+                            append("\nНе найдено в этом проекте: ${plan.notFound} — такие кейсы пропускаются.")
+                        }
+                        append("\n\nМеняются только статусы и баги, остальное не трогается.")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = changed > 0,
+                    onClick = {
+                        pendingResults = null
+                        busy = true
+                        vm.applyResults(r.uri, plan) { ok ->
+                            busy = false
+                            toast(
+                                if (ok) {
+                                    "Обновлено: $changed ${plural(changed, "кейс", "кейса", "кейсов")}"
+                                } else {
+                                    "Не удалось применить результаты"
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Text("Применить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingResults = null }) {
+                    Text(if (changed > 0) "Отмена" else "Закрыть")
                 }
             }
         )
