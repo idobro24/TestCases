@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.testcases.data.Backup
 import com.example.testcases.data.BackupContents
 import com.example.testcases.data.BackupException
+import com.example.testcases.data.CsvExport
 import kotlinx.coroutines.launch
 
 private class PendingRestore(
@@ -39,8 +40,8 @@ private class PendingRestore(
 )
 
 /**
- * Меню «⋮» на главном экране: сохранить полную копию данных одним файлом
- * и восстановить данные из такой копии.
+ * Меню «⋮» на главном экране: выгрузить все кейсы проекта в Excel,
+ * сохранить полную копию данных одним файлом и восстановить данные из такой копии.
  */
 @Composable
 fun BackupMenu(vm: TestCaseViewModel) {
@@ -48,6 +49,8 @@ fun BackupMenu(vm: TestCaseViewModel) {
     val scope = rememberCoroutineScope()
     val cases by vm.all.collectAsStateWithLifecycle()
     val sections by vm.sections.collectAsStateWithLifecycle()
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val currentProjectId by vm.currentProjectId.collectAsStateWithLifecycle()
 
     var open by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -77,6 +80,28 @@ fun BackupMenu(vm: TestCaseViewModel) {
             Icon(Icons.Rounded.MoreVert, contentDescription = "Резервная копия")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Экспорт в Excel (все кейсы)") },
+                onClick = {
+                    open = false
+                    val list = cases.orEmpty()
+                    if (list.isEmpty()) {
+                        toast("В проекте пока нет кейсов")
+                    } else {
+                        val projectName = projects.firstOrNull { it.id == currentProjectId }?.name.orEmpty()
+                        val baseName = projectName
+                            .replace(Regex("[^\\p{L}\\p{N}]+"), "_")
+                            .trim('_')
+                            .ifEmpty { "test-cases" }
+                        CsvExport.shareXlsx(
+                            context,
+                            "$baseName.xlsx",
+                            list,
+                            sections.associate { it.id to it.name }
+                        )
+                    }
+                }
+            )
             DropdownMenuItem(
                 text = { Text("Сохранить копию") },
                 onClick = {
