@@ -16,6 +16,9 @@ import com.example.testcases.data.CsvImport
 import com.example.testcases.data.ImportResult
 import com.example.testcases.data.ParsedCase
 import com.example.testcases.data.Project
+import com.example.testcases.data.ResultsFile
+import com.example.testcases.data.ResultsPlan
+import com.example.testcases.data.RunResults
 import com.example.testcases.data.Section
 import com.example.testcases.data.Status
 import com.example.testcases.data.TestCase
@@ -449,6 +452,38 @@ class TestCaseViewModel(app: Application) : AndroidViewModel(app) {
                     sectionDao.insertAll(restoredSections)
                     dao.insertAll(numbered)
                 }
+                true
+            } catch (e: Exception) {
+                false
+            }
+            onDone(ok)
+        }
+    }
+
+    // ---------------------------------------------------------- обмен результатами
+
+    /** Файл со статусами и багами всех кейсов текущего проекта. */
+    suspend fun createResultsFile(): File {
+        val pid = _currentProjectId.value
+        val name = projectDao.getAll().firstOrNull { it.id == pid }?.name.orEmpty()
+        val sectionNames = sectionDao.getByProject(pid).associate { it.id to it.name }
+        return RunResults.write(getApplication<Application>(), name, dao.getByProject(pid), sectionNames)
+    }
+
+    suspend fun readResults(uri: Uri): ResultsFile = RunResults.read(getApplication<Application>(), uri)
+
+    /** Что изменится в текущем проекте, если принять результаты. Ничего не меняет. */
+    suspend fun planResults(file: ResultsFile): ResultsPlan {
+        val pid = _currentProjectId.value
+        val sectionNames = sectionDao.getByProject(pid).associate { it.id to it.name }
+        return RunResults.plan(file, dao.getByProject(pid), sectionNames)
+    }
+
+    fun applyResults(uri: Uri, plan: ResultsPlan, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = try {
+                RunResults.extractScreens(getApplication<Application>(), uri, plan.screens)
+                db.withTransaction { plan.updated.forEach { dao.update(it) } }
                 true
             } catch (e: Exception) {
                 false
