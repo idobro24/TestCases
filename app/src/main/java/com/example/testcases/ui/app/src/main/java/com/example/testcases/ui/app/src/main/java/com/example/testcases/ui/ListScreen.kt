@@ -1,5 +1,6 @@
 package com.example.testcases.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.testcases.data.BugPdf
 import com.example.testcases.data.CsvExport
 import com.example.testcases.data.Priority
 import com.example.testcases.data.Status
@@ -58,6 +60,7 @@ fun CaseListScreen(
     var showDelete by rememberSaveable { mutableStateOf(false) }
     var showReset by rememberSaveable { mutableStateOf(false) }
     var showRunChoice by rememberSaveable { mutableStateOf(false) }
+    var pdfBusy by remember { mutableStateOf(false) }
 
     // Режим выбора: отмечаем несколько кейсов и применяем действие ко всем сразу
     var selectionMode by rememberSaveable { mutableStateOf(false) }
@@ -189,6 +192,21 @@ fun CaseListScreen(
         }
     }
 
+    /** PDF-отчёт для разработчика: кейсы с шагами, описанием бага и скриншотами. */
+    fun exportPdf(list: List<TestCase>) {
+        if (list.isEmpty() || pdfBusy) return
+        scope.launch {
+            pdfBusy = true
+            try {
+                BugPdf.share(context, BugPdf.build(context, title, list, sectionNames))
+            } catch (e: Exception) {
+                Toast.makeText(context, "Не удалось создать PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                pdfBusy = false
+            }
+        }
+    }
+
     fun copyCase(tc: TestCase) {
         vm.duplicate(tc) { copy ->
             scope.launch {
@@ -223,6 +241,7 @@ fun CaseListScreen(
                     count = selected.size,
                     allSelected = visible.isNotEmpty() && selected.size == visible.size,
                     onCancel = ::exitSelection,
+                    onPdf = { exportPdf(selectedCases()) },
                     onSelectAll = {
                         selected = if (selected.size == visible.size) {
                             emptySet()
@@ -269,6 +288,15 @@ fun CaseListScreen(
                                 onClick = {
                                     shareMenuOpen = false
                                     exportCases(asExcel = false)
+                                }
+                            )
+                            val bugCases = visible.filter { it.hasBug }
+                            DropdownMenuItem(
+                                text = { Text("PDF-отчёт по багам (${bugCases.size})") },
+                                enabled = bugCases.isNotEmpty(),
+                                onClick = {
+                                    shareMenuOpen = false
+                                    exportPdf(bugCases)
                                 }
                             )
                         }
@@ -439,6 +467,19 @@ fun CaseListScreen(
                 }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showDeleteSelected = false }) { Text("Отмена") } }
+        )
+    }
+
+    if (pdfBusy) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("Готовлю PDF…") },
+            text = {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
         )
     }
 
@@ -982,6 +1023,7 @@ private fun SelectionTopBar(
     count: Int,
     allSelected: Boolean,
     onCancel: () -> Unit,
+    onPdf: () -> Unit,
     onSelectAll: () -> Unit
 ) {
     TopAppBar(
@@ -992,6 +1034,9 @@ private fun SelectionTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onPdf, enabled = count > 0) {
+                Icon(Icons.Rounded.PictureAsPdf, contentDescription = "PDF-отчёт по выбранным")
+            }
             TextButton(onClick = onSelectAll) { Text(if (allSelected) "Снять все" else "Выбрать все") }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
